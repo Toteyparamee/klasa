@@ -1,0 +1,36 @@
+stages:
+  - build
+  - deploy
+
+variables:
+  REGISTRY: registry.kpinnovative.co.th/paramee/web_school
+  SERVICE_NAME: web-control
+  KUBECONFIG: /root/.kube/config
+
+build:web-control:
+  stage: build
+  image: docker:27
+  services:
+    - docker:27-dind
+  tags:
+    - runner-develop
+  before_script:
+    - echo "$CI_JOB_TOKEN" | docker login registry.kpinnovative.co.th -u gitlab-ci-token --password-stdin
+  script:
+    - docker build --network host -t $REGISTRY/$SERVICE_NAME:latest -t $REGISTRY/$SERVICE_NAME:$CI_COMMIT_SHORT_SHA .
+    - docker push $REGISTRY/$SERVICE_NAME:latest
+    - docker push $REGISTRY/$SERVICE_NAME:$CI_COMMIT_SHORT_SHA
+  rules:
+    - if: $CI_COMMIT_BRANCH == "develop"
+
+deploy:web-control:
+  stage: deploy
+  image: bitnami/kubectl:latest
+  tags:
+    - runner-develop
+  needs: [build:web-control]
+  script:
+    - kubectl rollout restart deployment/$SERVICE_NAME -n schoolapp
+    - kubectl rollout status deployment/$SERVICE_NAME -n schoolapp --timeout=120s
+  rules:
+    - if: $CI_COMMIT_BRANCH == "develop"

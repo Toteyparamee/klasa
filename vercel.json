@@ -1,0 +1,7 @@
+{
+  "cleanUrls": false,
+  "rewrites": [
+    { "source": "/api-proxy/:path*", "destination": "https://api.klasaapp.com/:path*" },
+    { "source": "/:path((?!.*\\.).+)", "destination": "/index.html" }
+  ]
+}

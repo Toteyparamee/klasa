@@ -1,0 +1,29 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: web-control
+  namespace: schoolapp
+  annotations:
+    haproxy.org/forwarded-for: "true"
+    haproxy.org/load-balance: roundrobin
+    haproxy.org/request-set-header: |
+      X-Forwarded-Proto https
+    haproxy.org/ssl-redirect: "false"
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+spec:
+  ingressClassName: haproxy
+  rules:
+    - host: www.klasaapp.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: web-control
+                port:
+                  number: 3000
+  tls:
+    - hosts:
+        - www.klasaapp.com
+      secretName: klasaapp-www-tls
