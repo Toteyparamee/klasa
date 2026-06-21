@@ -1,5 +1,6 @@
 'use client';
 
+import { useState, useEffect } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { useAuth } from '../context/AuthContext';
 import AdminSchoolSelector from './AdminSchoolSelector';
@@ -8,6 +9,22 @@ const Sidebar = () => {
   const router = useRouter();
   const pathname = usePathname();
   const { user, logout } = useAuth();
+  const [mobileOpen, setMobileOpen] = useState(false);
+
+  // ปิด sidebar เมื่อเปลี่ยนหน้า
+  useEffect(() => {
+    setMobileOpen(false);
+  }, [pathname]);
+
+  // ป้องกัน scroll body เมื่อ sidebar เปิดบนมือถือ
+  useEffect(() => {
+    if (mobileOpen) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
+    }
+    return () => { document.body.style.overflow = ''; };
+  }, [mobileOpen]);
 
   const handleLogout = () => {
     logout();
@@ -28,13 +45,24 @@ const Sidebar = () => {
   const isActive = (path) => pathname === path;
   const canAccess = (roles) => roles.includes(user?.role);
 
-  return (
-    <div className="w-[280px] h-screen bg-white border-r border-gray-200 flex flex-col fixed left-0 top-0 shadow-sm z-[1000]">
+  const sidebarContent = (
+    <div className="w-[280px] h-screen bg-white border-r border-gray-200 flex flex-col">
       {/* Logo / Brand */}
       <div className="px-5 py-6 border-b border-gray-100">
-        <div className="flex items-center gap-3 mb-5">
-          <img src="/logoklasa.png" alt="Klasa" className="h-9 w-auto object-contain" />
-          <span className="text-[15px] font-bold text-gray-800 leading-tight">ระบบจัดการโรงเรียน</span>
+        <div className="flex items-center justify-between mb-5">
+          <div className="flex items-center gap-3">
+            <img src="/logoklasa.png" alt="Klasa" className="h-9 w-auto object-contain" />
+            <span className="text-[15px] font-bold text-gray-800 leading-tight">ระบบจัดการโรงเรียน</span>
+          </div>
+          {/* ปุ่มปิดบนมือถือ */}
+          <button
+            onClick={() => setMobileOpen(false)}
+            className="md:hidden p-1.5 rounded-lg text-gray-400 hover:bg-gray-100 border-0 bg-transparent cursor-pointer"
+          >
+            <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+              <path d="M15 5L5 15M5 5l10 10" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+            </svg>
+          </button>
         </div>
         {/* User info */}
         <div className="flex items-center gap-3 bg-blue-50 px-3 py-2.5 rounded-xl">
@@ -91,6 +119,43 @@ const Sidebar = () => {
         </button>
       </div>
     </div>
+  );
+
+  return (
+    <>
+      {/* Desktop sidebar — fixed, always visible */}
+      <div className="hidden md:block fixed left-0 top-0 h-screen z-[1000] shadow-sm">
+        {sidebarContent}
+      </div>
+
+      {/* Mobile: hamburger button */}
+      <button
+        onClick={() => setMobileOpen(true)}
+        className="md:hidden fixed top-4 left-4 z-[1100] p-2 bg-white rounded-xl shadow-md border border-gray-200 cursor-pointer"
+        aria-label="เปิดเมนู"
+      >
+        <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
+          <path d="M3 6h16M3 11h16M3 16h16" stroke="#374151" strokeWidth="2" strokeLinecap="round"/>
+        </svg>
+      </button>
+
+      {/* Mobile: overlay */}
+      {mobileOpen && (
+        <div
+          className="md:hidden fixed inset-0 bg-black/40 z-[1050]"
+          onClick={() => setMobileOpen(false)}
+        />
+      )}
+
+      {/* Mobile: slide-in drawer */}
+      <div
+        className={`md:hidden fixed left-0 top-0 h-screen z-[1060] shadow-xl transition-transform duration-300 ease-in-out ${
+          mobileOpen ? 'translate-x-0' : '-translate-x-full'
+        }`}
+      >
+        {sidebarContent}
+      </div>
+    </>
   );
 };
 

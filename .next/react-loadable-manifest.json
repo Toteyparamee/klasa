@@ -1,1 +1,53 @@
-{}
+{
+  "node_modules/jspdf/dist/jspdf.es.min.js -> canvg": {
+    "id": "node_modules/jspdf/dist/jspdf.es.min.js -> canvg",
+    "files": [
+      "static/chunks/_app-pages-browser_node_modules_canvg_lib_index_es_js.js"
+    ]
+  },
+  "node_modules/jspdf/dist/jspdf.es.min.js -> dompurify": {
+    "id": "node_modules/jspdf/dist/jspdf.es.min.js -> dompurify",
+    "files": [
+      "static/chunks/_app-pages-browser_node_modules_dompurify_dist_purify_es_mjs.js"
+    ]
+  },
+  "node_modules/jspdf/dist/jspdf.es.min.js -> html2canvas": {
+    "id": "node_modules/jspdf/dist/jspdf.es.min.js -> html2canvas",
+    "files": [
+      "static/chunks/_app-pages-browser_node_modules_html2canvas_dist_html2canvas_js.js"
+    ]
+  },
+  "src/components/TeacherSchedule.jsx -> html2canvas": {
+    "id": "src/components/TeacherSchedule.jsx -> html2canvas",
+    "files": [
+      "static/chunks/_app-pages-browser_node_modules_html2canvas_dist_html2canvas_js.js"
+    ]
+  },
+  "src/components/TeacherSchedule.jsx -> jspdf": {
+    "id": "src/components/TeacherSchedule.jsx -> jspdf",
+    "files": [
+      "static/chunks/_app-pages-browser_node_modules_jspdf_dist_jspdf_es_min_js.js"
+    ]
+  },
+  "src/views/AdminDashboard.jsx -> ../components/SchoolLocationEditor": {
+    "id": "src/views/AdminDashboard.jsx -> ../components/SchoolLocationEditor",
+    "files": [
+      "static/css/_app-pages-browser_src_components_SchoolLocationEditor_jsx.css",
+      "static/chunks/_app-pages-browser_src_components_SchoolLocationEditor_jsx.js"
+    ]
+  },
+  "src/views/EmergencyDashboard.jsx -> ../components/EmergencyMap": {
+    "id": "src/views/EmergencyDashboard.jsx -> ../components/EmergencyMap",
+    "files": [
+      "static/css/_app-pages-browser_src_components_EmergencyMap_jsx.css",
+      "static/chunks/_app-pages-browser_src_components_EmergencyMap_jsx.js"
+    ]
+  },
+  "src/views/EmergencyDashboard.jsx -> ../components/SchoolLocationEditor": {
+    "id": "src/views/EmergencyDashboard.jsx -> ../components/SchoolLocationEditor",
+    "files": [
+      "static/css/_app-pages-browser_src_components_SchoolLocationEditor_jsx.css",
+      "static/chunks/_app-pages-browser_src_components_SchoolLocationEditor_jsx.js"
+    ]
+  }
+}

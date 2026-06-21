@@ -8,6 +8,11 @@ export const metadata = {
   description: 'ระบบบริหารจัดการโรงเรียน',
 };
 
+export const viewport = {
+  width: 'device-width',
+  initialScale: 1,
+};
+
 export default function RootLayout({ children }) {
   return (
     <html lang="th">

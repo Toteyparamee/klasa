@@ -158,7 +158,7 @@ export default function EmergencyDashboard() {
     return (
       <div className="flex min-h-screen bg-slate-50">
         <Sidebar />
-        <div className="flex-1 ml-[280px] min-h-screen bg-slate-50">
+        <div className="flex-1 md:ml-[280px] min-h-screen bg-slate-50 pt-16 md:pt-0">
           <div className="p-8 text-center text-gray-500">กำลังโหลด...</div>
         </div>
       </div>
@@ -170,7 +170,7 @@ export default function EmergencyDashboard() {
     return (
       <div className="flex min-h-screen bg-slate-50">
         <Sidebar />
-        <div className="flex-1 ml-[280px] min-h-screen bg-slate-50">
+        <div className="flex-1 md:ml-[280px] min-h-screen bg-slate-50 pt-16 md:pt-0">
           <div className="p-8">
             <div className="mb-8">
               <div className="flex items-center justify-between">
@@ -242,7 +242,7 @@ export default function EmergencyDashboard() {
   return (
     <div className="flex min-h-screen bg-slate-50">
       <Sidebar />
-      <div className="flex-1 ml-[280px] min-h-screen bg-slate-50">
+      <div className="flex-1 md:ml-[280px] min-h-screen bg-slate-50 pt-16 md:pt-0">
         <div className="flex h-screen">
           <div className="flex-1 relative">
             <div

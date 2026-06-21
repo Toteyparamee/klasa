@@ -179,7 +179,7 @@ const PersonnelManagementPage = () => {
     return (
       <div className="flex min-h-screen bg-slate-50">
         <Sidebar />
-        <div className="flex-1 ml-[280px] min-h-screen bg-slate-50">
+        <div className="flex-1 md:ml-[280px] min-h-screen bg-slate-50 pt-16 md:pt-0">
           <div className="p-8">
             <div className="mb-8">
               <h1 className="text-2xl font-bold text-gray-900">จัดการบุคลากร</h1>
@@ -239,7 +239,7 @@ const PersonnelManagementPage = () => {
         </div>
       )}
       <Sidebar />
-      <div className="flex-1 ml-[280px] min-h-screen bg-slate-50">
+      <div className="flex-1 md:ml-[280px] min-h-screen bg-slate-50 pt-16 md:pt-0">
         <div className="p-8">
           {/* Page header */}
           <div className="mb-8 flex justify-between items-start">
