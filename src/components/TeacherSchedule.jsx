@@ -179,7 +179,9 @@ const TeacherSchedule = ({ teachers = [], selectedTeacher, onTeacherChange, peri
     const slotEnd = timeToMinutes(slot.end);
 
     for (const [timeKey, data] of Object.entries(daySchedule)) {
-      const [start, end] = timeKey.split('-');
+      const lastDash = timeKey.lastIndexOf('-');
+      const start = timeKey.substring(0, lastDash);
+      const end = timeKey.substring(lastDash + 1);
       const dataStart = timeToMinutes(start);
       const dataEnd = timeToMinutes(end);
       if (dataStart < slotEnd && dataEnd > slotStart) {
