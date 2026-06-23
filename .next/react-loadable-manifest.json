@@ -35,19 +35,5 @@
       "static/css/_app-pages-browser_src_components_SchoolLocationEditor_jsx.css",
       "static/chunks/_app-pages-browser_src_components_SchoolLocationEditor_jsx.js"
     ]
-  },
-  "src/views/EmergencyDashboard.jsx -> ../components/EmergencyMap": {
-    "id": "src/views/EmergencyDashboard.jsx -> ../components/EmergencyMap",
-    "files": [
-      "static/css/_app-pages-browser_src_components_EmergencyMap_jsx.css",
-      "static/chunks/_app-pages-browser_src_components_EmergencyMap_jsx.js"
-    ]
-  },
-  "src/views/EmergencyDashboard.jsx -> ../components/SchoolLocationEditor": {
-    "id": "src/views/EmergencyDashboard.jsx -> ../components/SchoolLocationEditor",
-    "files": [
-      "static/css/_app-pages-browser_src_components_SchoolLocationEditor_jsx.css",
-      "static/chunks/_app-pages-browser_src_components_SchoolLocationEditor_jsx.js"
-    ]
   }
 }

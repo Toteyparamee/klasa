@@ -54,6 +54,19 @@ const emptyForm = {
   academicYear: '2568',
 };
 
+const emptySpecialForm = {
+  activityName: '',
+  creditType: '',
+  startTime: '',
+  endTime: '',
+  room: '',
+  teacherCode: '',
+  classId: '',
+  dayOfWeek: '',
+  semester: '1',
+  academicYear: '2568',
+};
+
 const SubjectManagement = ({ onSubjectsUpdate, selectedTeacher, teachers = [], onTeacherChange, classrooms = [] }) => {
   const { getValidToken } = useAuth();
   const schoolId = useSchoolId();
@@ -203,9 +216,12 @@ const SubjectManagement = ({ onSubjectsUpdate, selectedTeacher, teachers = [], o
   }, [subjects, onSubjectsUpdate]);
 
   const [showAddForm, setShowAddForm] = useState(false);
+  const [showAddDropdown, setShowAddDropdown] = useState(false);
+  const [formType, setFormType] = useState('normal'); // 'normal' | 'special'
   const [editingSubject, setEditingSubject] = useState(null);
   const [editingScheduleId, setEditingScheduleId] = useState(null);
   const [formData, setFormData] = useState(emptyForm);
+  const [specialFormData, setSpecialFormData] = useState(emptySpecialForm);
 
   const days = [
     { value: 1, label: 'จันทร์' },
@@ -416,9 +432,95 @@ const SubjectManagement = ({ onSubjectsUpdate, selectedTeacher, teachers = [], o
 
   const handleCancel = () => {
     setShowAddForm(false);
+    setShowAddDropdown(false);
     setEditingSubject(null);
     setEditingScheduleId(null);
     setFormData(emptyForm);
+    setSpecialFormData(emptySpecialForm);
+    setFormType('normal');
+  };
+
+  const handleSpecialInputChange = (e) => {
+    const { name, value } = e.target;
+    setSpecialFormData(prev => {
+      const updated = { ...prev, [name]: value };
+      if (name === 'startTime' || name === 'endTime') {
+        const start = name === 'startTime' ? value : prev.startTime;
+        const end = name === 'endTime' ? value : prev.endTime;
+        const calculated = calcPeriodFromTime(start, end, periodSlots);
+        if (calculated) updated.period = calculated;
+      }
+      return updated;
+    });
+  };
+
+  const handleSpecialSubmit = async (e) => {
+    e.preventDefault();
+    if (!specialFormData.activityName || !specialFormData.startTime || !specialFormData.endTime || !specialFormData.semester || !specialFormData.academicYear) {
+      alert('กรุณากรอกข้อมูลให้ครบถ้วน');
+      return;
+    }
+    if (!specialFormData.teacherCode || !specialFormData.classId || !specialFormData.dayOfWeek) {
+      alert('กรุณาเลือกครู ชั้นเรียน และวันที่สอน');
+      return;
+    }
+    try {
+      const token = await getValidToken();
+      if (!token) { alert('กรุณาเข้าสู่ระบบก่อน'); return; }
+
+      const creditsValue = specialFormData.creditType === '' ? 0 : null;
+      const subjectData = await subjectAPI.createSubject({
+        school_id: schoolId,
+        class_id: parseInt(specialFormData.classId) || 0,
+        subject_code: specialFormData.creditType || 'พิเศษ',
+        subject_name: specialFormData.activityName,
+        credits: creditsValue ?? 0,
+      }, token);
+
+      if (!subjectData.success) {
+        alert(`เกิดข้อผิดพลาดในการสร้างรายวิชา: ${subjectData.message}`);
+        return;
+      }
+
+      const period = calcPeriodFromTime(specialFormData.startTime, specialFormData.endTime, periodSlots) || '1';
+      const isAllTeachers = specialFormData.teacherCode === 'ALL';
+      const teacherList = isAllTeachers ? teachers.map(t => t.teacherCode) : [specialFormData.teacherCode];
+
+      const results = await Promise.all(
+        teacherList.map(tc =>
+          scheduleAPI.createSchedule({
+            school_id: schoolId,
+            class_id: parseInt(specialFormData.classId),
+            subject_id: subjectData.data.id,
+            teacher_code: tc,
+            day_of_week: parseInt(specialFormData.dayOfWeek),
+            period: parseInt(period) || 1,
+            start_time: specialFormData.startTime,
+            end_time: specialFormData.endTime,
+            room: specialFormData.room,
+            semester: parseInt(specialFormData.semester),
+            academic_year: specialFormData.academicYear,
+          }, token)
+        )
+      );
+
+      const failed = results.filter(r => !r.success);
+      if (failed.length === 0) {
+        alert(isAllTeachers
+          ? `เพิ่มวิชาพิเศษสำเร็จ สร้างตารางสอนให้ครูทั้ง ${teacherList.length} คน`
+          : 'เพิ่มวิชาพิเศษและตารางสอนสำเร็จ'
+        );
+      } else {
+        alert(`สร้างสำเร็จ ${results.length - failed.length}/${results.length} รายการ`);
+      }
+      await fetchSubjects();
+      setSpecialFormData(emptySpecialForm);
+      setShowAddForm(false);
+      setFormType('normal');
+    } catch (error) {
+      console.error('Error saving special subject:', error);
+      alert('เกิดข้อผิดพลาดในการบันทึกข้อมูล');
+    }
   };
 
   const inputCls = 'p-3 border border-gray-300 rounded-lg text-[15px] transition-colors focus:outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 w-full';
@@ -449,16 +551,224 @@ const SubjectManagement = ({ onSubjectsUpdate, selectedTeacher, teachers = [], o
               ))}
             </select>
           </div>
-          <button
-            onClick={() => setShowAddForm(!showAddForm)}
-            className="bg-gradient-to-br from-indigo-400 to-purple-600 text-white border-none py-3 px-6 rounded-lg cursor-pointer text-[15px] font-semibold transition-transform hover:-translate-y-0.5 hover:shadow-lg"
-          >
-            {showAddForm ? 'ยกเลิก' : '+ เพิ่มรายวิชา'}
-          </button>
+          <div className="relative">
+            {showAddForm ? (
+              <button
+                onClick={handleCancel}
+                className="bg-gray-400 text-white border-none py-3 px-6 rounded-lg cursor-pointer text-[15px] font-semibold hover:bg-gray-500 transition-colors"
+              >
+                ยกเลิก
+              </button>
+            ) : (
+              <>
+                <button
+                  onClick={() => setShowAddDropdown(prev => !prev)}
+                  className="bg-gradient-to-br from-indigo-400 to-purple-600 text-white border-none py-3 px-6 rounded-lg cursor-pointer text-[15px] font-semibold transition-transform hover:-translate-y-0.5 hover:shadow-lg flex items-center gap-2"
+                >
+                  + เพิ่มรายวิชา
+                  <svg className={`w-4 h-4 transition-transform ${showAddDropdown ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
+                </button>
+                {showAddDropdown && (
+                  <div className="absolute right-0 mt-1 w-48 bg-white rounded-lg shadow-lg border border-gray-100 z-10 overflow-hidden">
+                    <button
+                      onClick={() => { setFormType('normal'); setShowAddForm(true); setShowAddDropdown(false); }}
+                      className="w-full text-left px-4 py-3 text-sm text-gray-700 hover:bg-indigo-50 hover:text-indigo-600 transition-colors font-medium"
+                    >
+                      📚 รายวิชาทั่วไป
+                    </button>
+                    <button
+                      onClick={() => { setFormType('special'); setShowAddForm(true); setShowAddDropdown(false); }}
+                      className="w-full text-left px-4 py-3 text-sm text-gray-700 hover:bg-purple-50 hover:text-purple-600 transition-colors font-medium border-t border-gray-100"
+                    >
+                      ⭐ วิชาพิเศษ
+                    </button>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
         </div>
       </div>
 
-      {showAddForm && (
+      {showAddForm && formType === 'special' && (
+        <div className="bg-white p-7 rounded-xl shadow-md mb-7 border-l-4 border-purple-400">
+          <h3 className="mt-0 mb-5 text-gray-800 text-xl font-semibold">⭐ เพิ่มวิชาพิเศษ</h3>
+          <form onSubmit={handleSpecialSubmit} className="flex flex-col gap-5">
+            <div className="grid grid-cols-2 gap-5 max-sm:grid-cols-1">
+              <div className="flex flex-col gap-2">
+                <label className="font-semibold text-gray-500 text-sm">ชื่อกิจกรรม *</label>
+                <input
+                  type="text"
+                  name="activityName"
+                  value={specialFormData.activityName}
+                  onChange={handleSpecialInputChange}
+                  placeholder="เช่น ชุมนุมคอมพิวเตอร์"
+                  required
+                  className={inputCls}
+                />
+              </div>
+              <div className="flex flex-col gap-2">
+                <label className="font-semibold text-gray-500 text-sm">หน่วยกิต</label>
+                <select
+                  name="creditType"
+                  value={specialFormData.creditType}
+                  onChange={handleSpecialInputChange}
+                  className={inputCls}
+                >
+                  <option value="">ไม่มี</option>
+                  <option value="มผ">มผ</option>
+                  <option value="ผ">ผ</option>
+                  <option value="ร">ร</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-5 max-sm:grid-cols-1">
+              <div className="flex flex-col gap-2">
+                <label className="font-semibold text-gray-500 text-sm">เวลาเริ่ม *</label>
+                <input
+                  type="time"
+                  name="startTime"
+                  value={specialFormData.startTime}
+                  onChange={handleSpecialInputChange}
+                  required
+                  className={inputCls}
+                />
+              </div>
+              <div className="flex flex-col gap-2">
+                <label className="font-semibold text-gray-500 text-sm">เวลาสิ้นสุด *</label>
+                <input
+                  type="time"
+                  name="endTime"
+                  value={specialFormData.endTime}
+                  onChange={handleSpecialInputChange}
+                  required
+                  className={inputCls}
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-5 max-sm:grid-cols-1">
+              <div className="flex flex-col gap-2">
+                <label className="font-semibold text-gray-500 text-sm">ห้องเรียน</label>
+                <input
+                  type="text"
+                  name="room"
+                  value={specialFormData.room}
+                  onChange={handleSpecialInputChange}
+                  placeholder="เช่น 301"
+                  className={inputCls}
+                />
+              </div>
+              <div className="flex flex-col gap-2">
+                <label className="font-semibold text-gray-500 text-sm">ครูผู้สอน *</label>
+                <select
+                  name="teacherCode"
+                  value={specialFormData.teacherCode}
+                  onChange={handleSpecialInputChange}
+                  required
+                  className={inputCls}
+                >
+                  <option value="">-- เลือกครู --</option>
+                  <option value="ALL">ครูทุกคน</option>
+                  {teachers.map((teacher) => (
+                    <option key={teacher.id} value={teacher.teacherCode}>
+                      {teacher.titleTh || ''}{teacher.firstNameTh} {teacher.lastNameTh}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-5 max-sm:grid-cols-1">
+              <div className="flex flex-col gap-2">
+                <label className="font-semibold text-gray-500 text-sm">ชั้นเรียน/ห้อง *</label>
+                <select
+                  name="classId"
+                  value={specialFormData.classId}
+                  onChange={handleSpecialInputChange}
+                  required
+                  className={inputCls}
+                >
+                  <option value="">-- เลือกชั้นเรียน --</option>
+                  {classrooms && classrooms.length > 0 ? (
+                    classrooms.map((classroom, index) => (
+                      <option key={classroom.id || index} value={classroom.id}>
+                        {classroom.name}
+                      </option>
+                    ))
+                  ) : (
+                    <option disabled>ไม่พบข้อมูลห้องเรียน</option>
+                  )}
+                </select>
+              </div>
+              <div className="flex flex-col gap-2">
+                <label className="font-semibold text-gray-500 text-sm">วันที่สอน *</label>
+                <select
+                  name="dayOfWeek"
+                  value={specialFormData.dayOfWeek}
+                  onChange={handleSpecialInputChange}
+                  required
+                  className={inputCls}
+                >
+                  <option value="">-- เลือกวัน --</option>
+                  {days.map((day) => (
+                    <option key={day.value} value={day.value}>{day.label}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-5 max-sm:grid-cols-1">
+              <div className="flex flex-col gap-2">
+                <label className="font-semibold text-gray-500 text-sm">ภาคเรียน *</label>
+                <select
+                  name="semester"
+                  value={specialFormData.semester}
+                  onChange={handleSpecialInputChange}
+                  required
+                  className={inputCls}
+                >
+                  <option value="1">ภาคเรียนที่ 1</option>
+                  <option value="2">ภาคเรียนที่ 2</option>
+                </select>
+              </div>
+              <div className="flex flex-col gap-2">
+                <label className="font-semibold text-gray-500 text-sm">ปีการศึกษา *</label>
+                <input
+                  type="text"
+                  name="academicYear"
+                  value={specialFormData.academicYear}
+                  onChange={handleSpecialInputChange}
+                  placeholder="เช่น 2568"
+                  required
+                  className={inputCls}
+                />
+              </div>
+            </div>
+
+            <div className="flex gap-3 justify-end mt-2">
+              <button
+                type="button"
+                onClick={handleCancel}
+                className="py-3 px-6 bg-gray-400 text-white border-none rounded-lg cursor-pointer text-[15px] font-semibold hover:bg-gray-500 transition-colors"
+              >
+                ยกเลิก
+              </button>
+              <button
+                type="submit"
+                className="py-3 px-6 bg-gradient-to-br from-purple-500 to-purple-600 text-white border-none rounded-lg cursor-pointer text-[15px] font-semibold transition-transform hover:-translate-y-0.5 hover:shadow-lg"
+              >
+                เพิ่มวิชาพิเศษ
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {showAddForm && formType === 'normal' && (
         <div className="bg-white p-7 rounded-xl shadow-md mb-7">
           <h3 className="mt-0 mb-5 text-gray-800 text-xl font-semibold">
             {editingSubject ? 'แก้ไขข้อมูลรายวิชา' : 'เพิ่มข้อมูลรายวิชาและตารางสอน'}
