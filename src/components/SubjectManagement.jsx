@@ -464,6 +464,10 @@ const SubjectManagement = ({ onSubjectsUpdate, selectedTeacher, teachers = [], o
       alert('กรุณาเลือกครู ชั้นเรียน และวันที่สอน');
       return;
     }
+    if (specialFormData.classId === 'ALL' && (!classrooms || classrooms.length === 0)) {
+      alert('ไม่พบข้อมูลห้องเรียนในโรงเรียนนี้');
+      return;
+    }
     try {
       const token = await getValidToken();
       if (!token) { alert('กรุณาเข้าสู่ระบบก่อน'); return; }
@@ -484,13 +488,18 @@ const SubjectManagement = ({ onSubjectsUpdate, selectedTeacher, teachers = [], o
 
       const period = calcPeriodFromTime(specialFormData.startTime, specialFormData.endTime, periodSlots) || '1';
       const isAllTeachers = specialFormData.teacherCode === 'ALL';
+      const isAllClasses = specialFormData.classId === 'ALL';
       const teacherList = isAllTeachers ? teachers.map(t => t.teacherCode) : [specialFormData.teacherCode];
+      const classList = isAllClasses ? classrooms.map(c => c.id) : [parseInt(specialFormData.classId)];
+
+      const pairs = [];
+      teacherList.forEach(tc => classList.forEach(cid => pairs.push({ tc, cid })));
 
       const results = await Promise.all(
-        teacherList.map(tc =>
+        pairs.map(({ tc, cid }) =>
           scheduleAPI.createSchedule({
             school_id: schoolId,
-            class_id: parseInt(specialFormData.classId),
+            class_id: cid,
             subject_id: subjectData.data.id,
             teacher_code: tc,
             day_of_week: parseInt(specialFormData.dayOfWeek),
@@ -506,10 +515,9 @@ const SubjectManagement = ({ onSubjectsUpdate, selectedTeacher, teachers = [], o
 
       const failed = results.filter(r => !r.success);
       if (failed.length === 0) {
-        alert(isAllTeachers
-          ? `เพิ่มวิชาพิเศษสำเร็จ สร้างตารางสอนให้ครูทั้ง ${teacherList.length} คน`
-          : 'เพิ่มวิชาพิเศษและตารางสอนสำเร็จ'
-        );
+        const who = isAllTeachers ? `ครูทั้ง ${teacherList.length} คน` : '1 คน';
+        const where = isAllClasses ? `ทุกห้อง (${classList.length} ห้อง)` : '1 ห้อง';
+        alert(`เพิ่มวิชาพิเศษสำเร็จ สร้างตารางสอนให้${who} ${where}`);
       } else {
         alert(`สร้างสำเร็จ ${results.length - failed.length}/${results.length} รายการ`);
       }
@@ -693,6 +701,7 @@ const SubjectManagement = ({ onSubjectsUpdate, selectedTeacher, teachers = [], o
                   className={inputCls}
                 >
                   <option value="">-- เลือกชั้นเรียน --</option>
+                  <option value="ALL">นักเรียนทั้งหมด</option>
                   {classrooms && classrooms.length > 0 ? (
                     classrooms.map((classroom, index) => (
                       <option key={classroom.id || index} value={classroom.id}>
