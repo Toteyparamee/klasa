@@ -16,5 +16,5 @@ export const useSchoolId = () => {
     return schoolCtx?.selectedSchoolId ?? user?.school_id ?? null;
   }
 
-  return user?.school_id ?? API_CONFIG.DEFAULT_SCHOOL_ID;
+  return user?.school_id ?? null;
 };
