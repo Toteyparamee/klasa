@@ -11,6 +11,7 @@ import UserManagementPage from './views/UserManagementPage';
 import SystemSettingsPage from './views/SystemSettingsPage';
 import BehaviorScorePage from './views/BehaviorScorePage';
 import NewsManagementPage from './views/NewsManagementPage';
+import NewsRegistrationsPage from './views/NewsRegistrationsPage';
 import EmergencyDashboard from './views/EmergencyDashboard';
 import AcademicReportPage from './views/AcademicReportPage';
 
@@ -75,6 +76,14 @@ function App() {
               element={
                 <ProtectedRoute>
                   <NewsManagementPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/news/:newsId/registrations"
+              element={
+                <ProtectedRoute>
+                  <NewsRegistrationsPage />
                 </ProtectedRoute>
               }
             />

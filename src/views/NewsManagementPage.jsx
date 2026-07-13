@@ -1,11 +1,19 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import Sidebar from '../components/Sidebar';
 import Modal from '../components/Modal';
+import FormSchemaBuilder from '../components/FormSchemaBuilder';
 import { useAuth } from '../context/AuthContext';
 import { useSchoolId } from '../hooks/useSchoolId';
 import { newsAPI } from '../api/newsApi';
+
+const ACTION_TYPES = [
+  { value: 'none', label: 'ไม่มี' },
+  { value: 'external_link', label: 'ลิงก์ภายนอก' },
+  { value: 'registration_form', label: 'ฟอร์มลงทะเบียน' },
+];
 
 const COLOR_OPTIONS = [
   { key: 'blue', hex: '#2196F3' },
@@ -29,11 +37,17 @@ const EMPTY_FORM = {
   show_date: true,
   show_image: true,
   image_url: null,
+  action_type: 'none',
+  action_url: '',
+  form_schema: [],
+  capacity: null,
+  allow_cancel: false,
 };
 
 const NewsManagementPage = () => {
   const { getValidToken } = useAuth();
   const schoolId = useSchoolId();
+  const router = useRouter();
   const [newsList, setNewsList] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -80,6 +94,11 @@ const NewsManagementPage = () => {
       show_date: item.show_date ?? true,
       show_image: item.show_image ?? true,
       image_url: item.image_url || null,
+      action_type: item.action_type || 'none',
+      action_url: item.action_url || '',
+      form_schema: item.form_schema || [],
+      capacity: item.capacity ?? null,
+      allow_cancel: item.allow_cancel ?? false,
     });
     setShowForm(true);
   };
@@ -100,15 +119,57 @@ const NewsManagementPage = () => {
     }
   };
 
+  const validateActionFields = () => {
+    if (form.action_type === 'external_link') {
+      const url = (form.action_url || '').trim();
+      if (!url || !(url.startsWith('http://') || url.startsWith('https://'))) {
+        return 'กรุณาระบุลิงก์ที่ขึ้นต้นด้วย http:// หรือ https://';
+      }
+    }
+    if (form.action_type === 'registration_form') {
+      const fields = form.form_schema || [];
+      if (fields.length === 0) {
+        return 'กรุณาเพิ่มช่องกรอกข้อมูลอย่างน้อย 1 ช่อง';
+      }
+      for (const f of fields) {
+        if (!f.label || !f.label.trim()) {
+          return 'ทุกช่องต้องมี label';
+        }
+        if (f.type === 'dropdown' && (!f.options || f.options.length === 0)) {
+          return `ช่อง "${f.label}" เป็น dropdown ต้องมีตัวเลือกอย่างน้อย 1 ตัว`;
+        }
+      }
+      if (form.capacity !== null && form.capacity !== '' && Number(form.capacity) <= 0) {
+        return 'จำนวนที่รับต้องมากกว่า 0';
+      }
+    }
+    return null;
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
+    const validationError = validateActionFields();
+    if (validationError) {
+      alert(validationError);
+      return;
+    }
     setSaving(true);
     try {
       const token = await getValidToken();
+      const body = {
+        ...form,
+        action_url: form.action_type === 'external_link' ? form.action_url : null,
+        form_schema: form.action_type === 'registration_form' ? form.form_schema : [],
+        capacity:
+          form.action_type === 'registration_form' && form.capacity !== '' && form.capacity !== null
+            ? Number(form.capacity)
+            : null,
+        allow_cancel: form.action_type === 'registration_form' ? form.allow_cancel : false,
+      };
       if (editingId) {
-        await newsAPI.updateNews(editingId, form, token);
+        await newsAPI.updateNews(editingId, body, token);
       } else {
-        await newsAPI.createNews(form, token, schoolId);
+        await newsAPI.createNews(body, token, schoolId);
       }
       setShowForm(false);
       await loadNews();
@@ -222,7 +283,24 @@ const NewsManagementPage = () => {
                           <span>{item.date}</span>
                         </div>
                       )}
+                      {item.action_type === 'external_link' && (
+                        <div className="text-xs text-gray-400">🔗 ลิงก์ภายนอก</div>
+                      )}
+                      {item.action_type === 'registration_form' && (
+                        <div className="text-xs text-gray-400">
+                          📝 ฟอร์มลงทะเบียน{item.capacity ? ` (รับ ${item.capacity} คน)` : ''}
+                        </div>
+                      )}
                       <div className="flex justify-end gap-1 mt-auto pt-2">
+                        {item.action_type === 'registration_form' && (
+                          <button
+                            className="bg-transparent border-none px-3 h-9 rounded-full cursor-pointer text-xs font-semibold inline-flex items-center justify-center hover:bg-gray-100 transition-colors text-blue-600"
+                            onClick={() => router.push(`/news/${item.id}/registrations`)}
+                            title="ดูรายชื่อผู้ลงทะเบียน"
+                          >
+                            👥 ดูรายชื่อ
+                          </button>
+                        )}
                         <button
                           className="bg-transparent border-none w-9 h-9 rounded-full cursor-pointer text-base inline-flex items-center justify-center hover:bg-gray-100 transition-colors"
                           onClick={() => handleTogglePublish(item)}
@@ -377,6 +455,81 @@ const NewsManagementPage = () => {
               />
               <span>เผยแพร่</span>
             </label>
+
+            <div className="border-t border-gray-100 pt-4 flex flex-col gap-3">
+              <div className="font-semibold text-sm text-gray-800">การ์ดกดได้</div>
+              <div className="flex gap-2">
+                {ACTION_TYPES.map((t) => (
+                  <button
+                    key={t.value}
+                    type="button"
+                    className={`px-3 py-2 rounded-xl text-sm font-semibold border cursor-pointer transition-colors ${
+                      form.action_type === t.value
+                        ? 'bg-blue-600 text-white border-blue-600'
+                        : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'
+                    }`}
+                    onClick={() => setForm({ ...form, action_type: t.value })}
+                  >
+                    {t.label}
+                  </button>
+                ))}
+              </div>
+
+              {form.action_type === 'external_link' && (
+                <input
+                  type="url"
+                  className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-50"
+                  placeholder="https://example.com"
+                  value={form.action_url}
+                  onChange={(e) => setForm({ ...form, action_url: e.target.value })}
+                />
+              )}
+
+              {form.action_type === 'registration_form' && (
+                <div className="flex flex-col gap-3">
+                  <FormSchemaBuilder
+                    schema={form.form_schema}
+                    onChange={(schema) => setForm({ ...form, form_schema: schema })}
+                  />
+
+                  <label className="flex flex-col gap-1.5 text-sm text-gray-700">
+                    <span className="font-semibold text-gray-800">จำนวนที่รับ</span>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="number"
+                        min="1"
+                        className="flex-1 px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-blue-400 disabled:bg-gray-50 disabled:text-gray-400"
+                        placeholder="ไม่จำกัด"
+                        value={form.capacity ?? ''}
+                        disabled={form.capacity === null}
+                        onChange={(e) => setForm({ ...form, capacity: e.target.value })}
+                      />
+                      <label className="inline-flex items-center gap-1.5 text-xs text-gray-500 cursor-pointer whitespace-nowrap">
+                        <input
+                          type="checkbox"
+                          className="w-4 h-4 cursor-pointer"
+                          checked={form.capacity === null}
+                          onChange={(e) =>
+                            setForm({ ...form, capacity: e.target.checked ? null : '' })
+                          }
+                        />
+                        <span>ไม่จำกัดจำนวน</span>
+                      </label>
+                    </div>
+                  </label>
+
+                  <label className="inline-flex flex-row items-center gap-1.5 text-sm font-medium text-gray-600 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      className="w-4 h-4 cursor-pointer"
+                      checked={form.allow_cancel}
+                      onChange={(e) => setForm({ ...form, allow_cancel: e.target.checked })}
+                    />
+                    <span>อนุญาตให้นักเรียนยกเลิกการลงทะเบียน</span>
+                  </label>
+                </div>
+              )}
+            </div>
 
           <div className="flex justify-end gap-2.5 mt-2">
             <button

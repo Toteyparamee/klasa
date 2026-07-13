@@ -57,6 +57,20 @@ export const newsAPI = {
     const base = buildURL('NEWS', '');
     return `${base}${path}`;
   },
+
+  // ครูดูรายชื่อผู้ลงทะเบียนของข่าว (action_type === 'registration_form')
+  async getRegistrations(newsId, token) {
+    const url = buildURL('NEWS', `/api/news/${newsId}/registrations`);
+    return apiRequest(url, { token });
+  },
+
+  // URL สำหรับ <a href download> ให้ browser ดาวน์โหลด CSV ตรง — ต้องแนบ token
+  // ผ่าน query param เพราะ <a> ตั้ง Authorization header เองไม่ได้
+  getRegistrationsExportUrl(newsId, token) {
+    const authToken = token || getToken();
+    const base = buildURL('NEWS', `/api/news/${newsId}/registrations/export`);
+    return `${base}?token=${encodeURIComponent(authToken)}`;
+  },
 };
 
 export default newsAPI;
