@@ -8,7 +8,7 @@ import PeriodGridSettings from './PeriodGridSettings';
 const ScheduleManagement = ({ school }) => {
   const [activeSubTab, setActiveSubTab] = useState('schedule');
   const [subjects, setSubjects] = useState([]);
-  const [selectedTeacher, setSelectedTeacher] = useState('');
+  const [selectedTeacher, setSelectedTeacher] = useState('ALL');
   const [periodConfigVersion, setPeriodConfigVersion] = useState(0);
 
   const handleSubjectsUpdate = (updatedSubjects) => {
