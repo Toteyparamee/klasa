@@ -3,12 +3,14 @@
 import { useState } from 'react';
 import SubjectManagement from './SubjectManagement';
 import TeacherSchedule from './TeacherSchedule';
+import ClassSchedule from './ClassSchedule';
 import PeriodGridSettings from './PeriodGridSettings';
 
 const ScheduleManagement = ({ school }) => {
   const [activeSubTab, setActiveSubTab] = useState('schedule');
   const [subjects, setSubjects] = useState([]);
   const [selectedTeacher, setSelectedTeacher] = useState('ALL');
+  const [selectedClassId, setSelectedClassId] = useState('');
   const [periodConfigVersion, setPeriodConfigVersion] = useState(0);
 
   const handleSubjectsUpdate = (updatedSubjects) => {
@@ -30,6 +32,12 @@ const ScheduleManagement = ({ school }) => {
           onClick={() => setActiveSubTab('schedule')}
         >
           📅 ตารางสอน
+        </button>
+        <button
+          className={`${tabBase} ${activeSubTab === 'class-schedule' ? tabActive : ''}`}
+          onClick={() => setActiveSubTab('class-schedule')}
+        >
+          🏫 ตารางห้องเรียน
         </button>
         <button
           className={`${tabBase} ${activeSubTab === 'subjects' ? tabActive : ''}`}
@@ -54,6 +62,16 @@ const ScheduleManagement = ({ school }) => {
             periodConfigVersion={periodConfigVersion}
             school={school}
             classrooms={school?.classrooms || []}
+          />
+        </div>
+        <div style={{ display: activeSubTab === 'class-schedule' ? 'block' : 'none' }}>
+          <ClassSchedule
+            classrooms={school?.classrooms || []}
+            teachers={school?.teachers || []}
+            selectedClassId={selectedClassId}
+            onClassChange={setSelectedClassId}
+            periodConfigVersion={periodConfigVersion}
+            school={school}
           />
         </div>
         <div style={{ display: activeSubTab === 'subjects' ? 'block' : 'none' }}>

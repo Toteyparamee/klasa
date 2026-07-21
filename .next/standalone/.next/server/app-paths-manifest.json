@@ -1,15 +1,15 @@
 {
   "/_not-found/page": "app/_not-found/page.js",
-  "/emergency/page": "app/emergency/page.js",
+  "/news/[newsId]/registrations/page": "app/news/[newsId]/registrations/page.js",
   "/academic-report/page": "app/academic-report/page.js",
+  "/news/page": "app/news/page.js",
   "/dashboard/page": "app/dashboard/page.js",
+  "/page": "app/page.js",
+  "/emergency/page": "app/emergency/page.js",
+  "/reset-password/page": "app/reset-password/page.js",
   "/behavior/page": "app/behavior/page.js",
   "/personnel/page": "app/personnel/page.js",
-  "/news/[newsId]/registrations/page": "app/news/[newsId]/registrations/page.js",
-  "/page": "app/page.js",
-  "/news/page": "app/news/page.js",
-  "/settings/page": "app/settings/page.js",
   "/school/[schoolId]/page": "app/school/[schoolId]/page.js",
-  "/reset-password/page": "app/reset-password/page.js",
+  "/settings/page": "app/settings/page.js",
   "/users/page": "app/users/page.js"
 }

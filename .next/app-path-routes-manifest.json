@@ -1,15 +1,15 @@
 {
   "/_not-found/page": "/_not-found",
-  "/emergency/page": "/emergency",
+  "/news/[newsId]/registrations/page": "/news/[newsId]/registrations",
   "/academic-report/page": "/academic-report",
+  "/news/page": "/news",
   "/dashboard/page": "/dashboard",
+  "/page": "/",
+  "/emergency/page": "/emergency",
+  "/reset-password/page": "/reset-password",
   "/behavior/page": "/behavior",
   "/personnel/page": "/personnel",
-  "/news/[newsId]/registrations/page": "/news/[newsId]/registrations",
-  "/page": "/",
-  "/news/page": "/news",
-  "/settings/page": "/settings",
   "/school/[schoolId]/page": "/school/[schoolId]",
-  "/reset-password/page": "/reset-password",
+  "/settings/page": "/settings",
   "/users/page": "/users"
 }

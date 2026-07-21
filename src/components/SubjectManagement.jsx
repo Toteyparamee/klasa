@@ -6,6 +6,7 @@ import { periodGridAPI } from '../api/scheduleApi';
 import { loadPeriodConfig } from './PeriodGridSettings';
 import { useAuth } from '../context/AuthContext';
 import { useSchoolId } from '../hooks/useSchoolId';
+import { useScheduleConflict } from '../hooks/useScheduleConflict';
 
 const timeToMinutes = (t) => {
   if (!t) return 0;
@@ -248,6 +249,12 @@ const SubjectManagement = ({ onSubjectsUpdate, selectedTeacher, teachers = [], o
   const [formData, setFormData] = useState(emptyForm);
   const [specialFormData, setSpecialFormData] = useState(emptySpecialForm);
 
+  const { checkConflict, reloadSchedules } = useScheduleConflict(
+    schoolId,
+    formData.semester || specialFormData.semester,
+    formData.academicYear || specialFormData.academicYear
+  );
+
   const days = [
     { value: 1, label: 'จันทร์' },
     { value: 2, label: 'อังคาร' },
@@ -362,6 +369,7 @@ const SubjectManagement = ({ onSubjectsUpdate, selectedTeacher, teachers = [], o
 
         // Refresh subjects data
         await fetchSubjects();
+      reloadSchedules();
       } else {
         // เพิ่มรายวิชาใหม่
         const subjectData = await subjectAPI.createSubject({
@@ -399,6 +407,7 @@ const SubjectManagement = ({ onSubjectsUpdate, selectedTeacher, teachers = [], o
         }
         // Refresh subjects data
         await fetchSubjects();
+      reloadSchedules();
       }
 
       setFormData(emptyForm);
@@ -563,6 +572,7 @@ const SubjectManagement = ({ onSubjectsUpdate, selectedTeacher, teachers = [], o
         alert(`สร้างสำเร็จ ${successCount}/${pairs.length} รายการ\n\nห้องที่ข้าม/ไม่สำเร็จ:\n${failedList}`);
       }
       await fetchSubjects();
+      reloadSchedules();
       setSpecialFormData(emptySpecialForm);
       setShowAddForm(false);
       setFormType('normal');
@@ -573,6 +583,46 @@ const SubjectManagement = ({ onSubjectsUpdate, selectedTeacher, teachers = [], o
   };
 
   const inputCls = 'p-3 border border-gray-300 rounded-lg text-[15px] transition-colors focus:outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 w-full';
+
+  const describeConflict = (conflict) => {
+    if (!conflict) return '';
+    const teacher = teachers.find(t => t.teacherCode === conflict.teacher_code);
+    const teacherName = teacher
+      ? `${teacher.titleTh || ''}${teacher.firstNameTh} ${teacher.lastNameTh}`
+      : (conflict.teacher_code || '-');
+    const subjectName = conflict.subject?.subject_name || 'วิชาอื่น';
+    return `${subjectName} (${teacherName}) เวลา ${conflict.start_time}-${conflict.end_time}`;
+  };
+
+  // เช็ค conflict ของฟอร์มวิชาปกติ แบบ real-time (ยกเว้นตัวเองตอนแก้ไข)
+  const normalFormConflict = checkConflict({
+    classId: formData.classId,
+    dayOfWeek: formData.dayOfWeek,
+    startTime: formData.startTime,
+    endTime: formData.endTime,
+    excludeScheduleId: editingScheduleId,
+  });
+
+  // เช็ค conflict ของฟอร์มวิชาพิเศษ แบบ real-time — ถ้าเลือก "นักเรียนทั้งหมด" เช็คทุกห้อง
+  // แล้วสรุปว่ากี่ห้องว่าง/กี่ห้องชน ก่อนกดบันทึกจริง
+  const specialFormClassList = specialFormData.classId === 'ALL'
+    ? classrooms.map(c => c.id)
+    : (specialFormData.classId ? [parseInt(specialFormData.classId)] : []);
+
+  const specialFormConflicts = specialFormData.dayOfWeek && specialFormData.startTime && specialFormData.endTime
+    ? specialFormClassList
+      .map((cid) => ({
+        classId: cid,
+        className: classrooms.find(c => c.id === cid)?.name || `ห้อง #${cid}`,
+        conflict: checkConflict({
+          classId: cid,
+          dayOfWeek: specialFormData.dayOfWeek,
+          startTime: specialFormData.startTime,
+          endTime: specialFormData.endTime,
+        }),
+      }))
+      .filter(r => r.conflict)
+    : [];
 
   return (
     <div className="p-5">
@@ -799,6 +849,30 @@ const SubjectManagement = ({ onSubjectsUpdate, selectedTeacher, teachers = [], o
               </div>
             </div>
 
+            {specialFormClassList.length > 0 && specialFormData.dayOfWeek && specialFormData.startTime && specialFormData.endTime && (
+              specialFormConflicts.length === 0 ? (
+                <div className="p-3 rounded-lg bg-green-50 border border-green-200 text-green-700 text-sm flex items-start gap-2">
+                  <span>🟢</span>
+                  <span>คาบนี้ว่างทั้งหมด ({specialFormClassList.length} ห้อง)</span>
+                </div>
+              ) : (
+                <div className="p-3 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm">
+                  <div className="flex items-start gap-2 font-semibold mb-1">
+                    <span>🔴</span>
+                    <span>
+                      ชน {specialFormConflicts.length}/{specialFormClassList.length} ห้อง
+                      (ว่าง {specialFormClassList.length - specialFormConflicts.length} ห้อง)
+                    </span>
+                  </div>
+                  <ul className="pl-6 list-disc space-y-0.5">
+                    {specialFormConflicts.map(({ classId, className, conflict }) => (
+                      <li key={classId}>{className}: {describeConflict(conflict)}</li>
+                    ))}
+                  </ul>
+                </div>
+              )
+            )}
+
             <div className="flex gap-3 justify-end mt-2">
               <button
                 type="button"
@@ -1014,6 +1088,20 @@ const SubjectManagement = ({ onSubjectsUpdate, selectedTeacher, teachers = [], o
                   />
                 </div>
               </div>
+
+              {formData.classId && formData.dayOfWeek && formData.startTime && formData.endTime && (
+                normalFormConflict ? (
+                  <div className="mt-4 p-3 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm flex items-start gap-2">
+                    <span>🔴</span>
+                    <span>คาบนี้ชนกับ {describeConflict(normalFormConflict)}</span>
+                  </div>
+                ) : (
+                  <div className="mt-4 p-3 rounded-lg bg-green-50 border border-green-200 text-green-700 text-sm flex items-start gap-2">
+                    <span>🟢</span>
+                    <span>คาบนี้ว่าง</span>
+                  </div>
+                )
+              )}
             </div>
 
             <div className="flex gap-3 justify-end mt-2">
