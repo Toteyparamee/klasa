@@ -495,7 +495,9 @@ const SubjectManagement = ({ onSubjectsUpdate, selectedTeacher, teachers = [], o
       const pairs = [];
       teacherList.forEach(tc => classList.forEach(cid => pairs.push({ tc, cid })));
 
-      const results = await Promise.all(
+      const classNameById = new Map((classrooms || []).map(c => [c.id, c.name]));
+
+      const settled = await Promise.allSettled(
         pairs.map(({ tc, cid }) =>
           scheduleAPI.createSchedule({
             school_id: schoolId,
@@ -513,13 +515,27 @@ const SubjectManagement = ({ onSubjectsUpdate, selectedTeacher, teachers = [], o
         )
       );
 
-      const failed = results.filter(r => !r.success);
+      const failed = [];
+      let successCount = 0;
+      settled.forEach((result, idx) => {
+        const { cid } = pairs[idx];
+        if (result.status === 'fulfilled' && result.value.success) {
+          successCount++;
+        } else {
+          const reason = result.status === 'rejected'
+            ? result.reason?.message
+            : result.value?.message;
+          failed.push({ className: classNameById.get(cid) || `ห้อง #${cid}`, reason });
+        }
+      });
+
       if (failed.length === 0) {
         const who = isAllTeachers ? `ครูทั้ง ${teacherList.length} คน` : '1 คน';
         const where = isAllClasses ? `ทุกห้อง (${classList.length} ห้อง)` : '1 ห้อง';
         alert(`เพิ่มวิชาพิเศษสำเร็จ สร้างตารางสอนให้${who} ${where}`);
       } else {
-        alert(`สร้างสำเร็จ ${results.length - failed.length}/${results.length} รายการ`);
+        const failedList = failed.map(f => `- ${f.className}${f.reason ? `: ${f.reason}` : ''}`).join('\n');
+        alert(`สร้างสำเร็จ ${successCount}/${pairs.length} รายการ\n\nห้องที่ข้าม/ไม่สำเร็จ:\n${failedList}`);
       }
       await fetchSubjects();
       setSpecialFormData(emptySpecialForm);
