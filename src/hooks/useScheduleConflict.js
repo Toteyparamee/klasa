@@ -15,31 +15,35 @@ export const useScheduleConflict = (schoolId, semester, academicYear) => {
   const [schedules, setSchedules] = useState([]);
   const [loading, setLoading] = useState(false);
 
-  const reload = useCallback(async () => {
-    if (!schoolId || !semester || !academicYear) {
-      setSchedules([]);
-      return;
-    }
-    setLoading(true);
-    try {
-      const token = getToken();
-      const data = await scheduleAPI.getSchedules({ schoolId, semester, academicYear }, token);
-      setSchedules(data.success && data.data ? data.data : []);
-    } catch (error) {
-      console.error('Failed to load schedules for conflict check:', error);
-      setSchedules([]);
-    } finally {
-      setLoading(false);
-    }
-  }, [schoolId, semester, academicYear]);
+  const hasParams = Boolean(schoolId && semester && academicYear);
+
+  const [reloadTick, setReloadTick] = useState(0);
+  const reload = useCallback(() => setReloadTick((t) => t + 1), []);
 
   useEffect(() => {
-    reload();
-  }, [reload]);
+    if (!hasParams) return;
+    let cancelled = false;
+
+    (async () => {
+      setLoading(true);
+      try {
+        const token = getToken();
+        const data = await scheduleAPI.getSchedules({ schoolId, semester, academicYear }, token);
+        if (!cancelled) setSchedules(data.success && data.data ? data.data : []);
+      } catch (error) {
+        console.error('Failed to load schedules for conflict check:', error);
+        if (!cancelled) setSchedules([]);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [hasParams, schoolId, semester, academicYear, reloadTick]);
 
   // คืน schedule ที่ชนกับพารามิเตอร์ที่ส่งเข้ามา (ถ้ามี) หรือ null ถ้าคาบว่าง
   const checkConflict = useCallback(({ classId, dayOfWeek, startTime, endTime, excludeScheduleId }) => {
-    if (!classId || !dayOfWeek || !startTime || !endTime) return null;
+    if (!hasParams || !classId || !dayOfWeek || !startTime || !endTime) return null;
 
     const cid = parseInt(classId);
     const day = parseInt(dayOfWeek);
@@ -54,7 +58,7 @@ export const useScheduleConflict = (schoolId, semester, academicYear) => {
       const sEnd = timeToMinutes(s.end_time);
       return start < sEnd && end > sStart;
     }) || null;
-  }, [schedules]);
+  }, [hasParams, schedules]);
 
   return { checkConflict, reloadSchedules: reload, schedulesLoading: loading };
 };
