@@ -455,13 +455,16 @@ const TeacherSchedule = ({ teachers = [], selectedTeacher, onTeacherChange, peri
 
                 if (slotData) {
                   const color = colors[slotData.className] || '#6366F1';
+                  const clickable = editable && slotData.raw;
                   return (
                     <td key={`${day}-${slot.label}`} className="border border-slate-100 min-w-[120px] align-top">
                       <div
-                        className="group relative m-1 p-2 rounded-lg flex flex-col gap-0.5 min-h-[60px]"
+                        onClick={clickable ? () => openDetail(slotData.raw) : undefined}
+                        className={`relative m-1 p-2 rounded-lg flex flex-col gap-0.5 min-h-[60px] ${clickable ? 'cursor-pointer hover:ring-2 hover:ring-offset-1 transition-shadow' : ''}`}
                         style={{
                           background: `linear-gradient(135deg, ${color}30, ${color}18)`,
                           borderLeft: `4px solid ${color}`,
+                          ...(clickable ? { '--tw-ring-color': color } : {}),
                         }}
                       >
                         {slotData.subjectCode && (
@@ -478,26 +481,6 @@ const TeacherSchedule = ({ teachers = [], selectedTeacher, onTeacherChange, peri
                         {slotData.room && (
                           <div className="text-[0.6875rem] mt-0.5" style={{ color: `${color}AA` }}>
                             ห้อง {slotData.room}
-                          </div>
-                        )}
-                        {editable && slotData.raw && (
-                          <div className="hidden group-hover:flex absolute inset-0 bg-white/90 backdrop-blur-[1px] rounded-lg flex-col items-center justify-center gap-1 p-1">
-                            <button
-                              type="button"
-                              onClick={() => openDetail(slotData.raw)}
-                              className="w-full text-[0.6875rem] font-semibold px-2 py-1 rounded-md bg-slate-100 text-slate-700 hover:bg-slate-200 transition-colors"
-                            >
-                              ดูรายละเอียด
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => openEditFromDetail(slotData.raw)}
-                              className="w-full text-[0.6875rem] font-semibold px-2 py-1 rounded-md text-white transition-colors"
-                              style={{ backgroundColor: color }}
-                            >
-                              แก้ไข
-                            </button>
-                            
                           </div>
                         )}
                       </div>
