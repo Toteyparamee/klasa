@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { subjectAPI, scheduleAPI, getToken, API_CONFIG } from '../api';
 import { periodGridAPI } from '../api/scheduleApi';
 import { loadPeriodConfig } from './PeriodGridSettings';
@@ -284,6 +284,19 @@ const SubjectManagement = ({ onSubjectsUpdate, selectedTeacher, teachers = [], o
   const [editingScheduleId, setEditingScheduleId] = useState(null);
   const [formData, setFormData] = useState(emptyForm);
   const [specialFormData, setSpecialFormData] = useState(emptySpecialForm);
+  const [showClassPicker, setShowClassPicker] = useState(false);
+  const classPickerRef = useRef(null);
+
+  useEffect(() => {
+    if (!showClassPicker) return;
+    const handleClickOutside = (e) => {
+      if (classPickerRef.current && !classPickerRef.current.contains(e.target)) {
+        setShowClassPicker(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [showClassPicker]);
 
   const { checkConflict, reloadSchedules } = useScheduleConflict(
     schoolId,
@@ -507,6 +520,7 @@ const SubjectManagement = ({ onSubjectsUpdate, selectedTeacher, teachers = [], o
     setEditingScheduleId(null);
     setFormData(emptyForm);
     setSpecialFormData(emptySpecialForm);
+    setShowClassPicker(false);
     setFormType('normal');
   };
 
@@ -524,9 +538,12 @@ const SubjectManagement = ({ onSubjectsUpdate, selectedTeacher, teachers = [], o
     });
   };
 
-  const handleSpecialClassIdsChange = (e) => {
-    const selected = Array.from(e.target.selectedOptions).map(o => o.value);
-    setSpecialFormData(prev => ({ ...prev, classIds: selected }));
+  const toggleSpecialClassId = (token) => {
+    setSpecialFormData(prev => {
+      const has = prev.classIds.includes(token);
+      const classIds = has ? prev.classIds.filter(t => t !== token) : [...prev.classIds, token];
+      return { ...prev, classIds };
+    });
   };
 
   const handleSpecialSubmit = async (e) => {
@@ -615,6 +632,7 @@ const SubjectManagement = ({ onSubjectsUpdate, selectedTeacher, teachers = [], o
       await fetchSubjects();
       reloadSchedules();
       setSpecialFormData(emptySpecialForm);
+    setShowClassPicker(false);
       setShowAddForm(false);
       setFormType('normal');
     } catch (error) {
@@ -820,36 +838,64 @@ const SubjectManagement = ({ onSubjectsUpdate, selectedTeacher, teachers = [], o
             </div>
 
             <div className="grid grid-cols-2 gap-5 max-sm:grid-cols-1">
-              <div className="flex flex-col gap-2">
+              <div className="flex flex-col gap-2 relative" ref={classPickerRef}>
                 <label className="font-semibold text-gray-500 text-sm">ชั้นเรียน/ห้อง * (เลือกได้หลายรายการ)</label>
-                <select
-                  name="classIds"
-                  multiple
-                  value={specialFormData.classIds}
-                  onChange={handleSpecialClassIdsChange}
-                  required
-                  size={6}
-                  className={`${inputCls} py-1`}
+                <button
+                  type="button"
+                  onClick={() => setShowClassPicker(prev => !prev)}
+                  className={`${inputCls} text-left flex items-center justify-between gap-2 bg-white`}
                 >
-                  <option value="ALL">นักเรียนทั้งหมด</option>
-                  <option value="JUNIOR">มัธยมต้น (ม.1-3)</option>
-                  <option value="SENIOR">มัธยมปลาย (ม.4-6)</option>
-                  {[1, 2, 3, 4, 5, 6].map((level) => (
-                    <option key={`G${level}`} value={`G${level}`}>ม.{level} (ทุกห้อง)</option>
-                  ))}
-                  {classrooms && classrooms.length > 0 ? (
-                    classrooms.map((classroom, index) => (
-                      <option key={classroom.id || index} value={classroom.id}>
-                        {classroom.name}
-                      </option>
-                    ))
-                  ) : (
-                    <option disabled>ไม่พบข้อมูลห้องเรียน</option>
-                  )}
-                </select>
-                <span className="text-xs text-gray-400">
-                  กด Ctrl/Cmd ค้างเพื่อเลือกหลายรายการ — เลือกแล้ว {specialFormClassList.length} ห้อง
-                </span>
+                  <span className={specialFormData.classIds.length === 0 ? 'text-gray-400' : 'text-gray-700'}>
+                    {specialFormData.classIds.length === 0
+                      ? '-- เลือกชั้นเรียน --'
+                      : `เลือกแล้ว ${specialFormClassList.length} ห้อง (${specialFormData.classIds.length} รายการ)`}
+                  </span>
+                  <svg className={`w-4 h-4 flex-shrink-0 transition-transform ${showClassPicker ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
+                </button>
+
+                {showClassPicker && (
+                  <div className="absolute top-full left-0 mt-1 w-full max-h-72 overflow-y-auto bg-white rounded-lg shadow-lg border border-gray-200 z-20 p-2">
+                    <ClassCheckboxOption
+                      label="นักเรียนทั้งหมด"
+                      checked={specialFormData.classIds.includes('ALL')}
+                      onToggle={() => toggleSpecialClassId('ALL')}
+                    />
+                    <ClassCheckboxOption
+                      label="มัธยมต้น (ม.1-3)"
+                      checked={specialFormData.classIds.includes('JUNIOR')}
+                      onToggle={() => toggleSpecialClassId('JUNIOR')}
+                    />
+                    <ClassCheckboxOption
+                      label="มัธยมปลาย (ม.4-6)"
+                      checked={specialFormData.classIds.includes('SENIOR')}
+                      onToggle={() => toggleSpecialClassId('SENIOR')}
+                    />
+                    <div className="border-t border-gray-100 my-1.5" />
+                    {[1, 2, 3, 4, 5, 6].map((level) => (
+                      <ClassCheckboxOption
+                        key={`G${level}`}
+                        label={`ม.${level} (ทุกห้อง)`}
+                        checked={specialFormData.classIds.includes(`G${level}`)}
+                        onToggle={() => toggleSpecialClassId(`G${level}`)}
+                      />
+                    ))}
+                    {classrooms && classrooms.length > 0 && (
+                      <>
+                        <div className="border-t border-gray-100 my-1.5" />
+                        {classrooms.map((classroom, index) => (
+                          <ClassCheckboxOption
+                            key={classroom.id || index}
+                            label={classroom.name}
+                            checked={specialFormData.classIds.includes(String(classroom.id))}
+                            onToggle={() => toggleSpecialClassId(String(classroom.id))}
+                          />
+                        ))}
+                      </>
+                    )}
+                  </div>
+                )}
               </div>
               <div className="flex flex-col gap-2">
                 <label className="font-semibold text-gray-500 text-sm">วันที่สอน *</label>
@@ -1245,5 +1291,17 @@ const SubjectManagement = ({ onSubjectsUpdate, selectedTeacher, teachers = [], o
     </div>
   );
 };
+
+const ClassCheckboxOption = ({ label, checked, onToggle }) => (
+  <label className="flex items-center gap-2.5 px-2.5 py-2 rounded-md cursor-pointer hover:bg-indigo-50 text-sm text-gray-700 select-none">
+    <input
+      type="checkbox"
+      checked={checked}
+      onChange={onToggle}
+      className="w-4 h-4 accent-indigo-500 cursor-pointer flex-shrink-0"
+    />
+    {label}
+  </label>
+);
 
 export default SubjectManagement;
