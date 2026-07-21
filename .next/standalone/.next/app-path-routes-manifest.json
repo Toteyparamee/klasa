@@ -1,0 +1,15 @@
+{
+  "/_not-found/page": "/_not-found",
+  "/dashboard/page": "/dashboard",
+  "/academic-report/page": "/academic-report",
+  "/page": "/",
+  "/emergency/page": "/emergency",
+  "/behavior/page": "/behavior",
+  "/personnel/page": "/personnel",
+  "/school/[schoolId]/page": "/school/[schoolId]",
+  "/news/page": "/news",
+  "/news/[newsId]/registrations/page": "/news/[newsId]/registrations",
+  "/settings/page": "/settings",
+  "/reset-password/page": "/reset-password",
+  "/users/page": "/users"
+}

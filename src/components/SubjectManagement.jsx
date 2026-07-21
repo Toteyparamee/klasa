@@ -18,6 +18,20 @@ const formatPeriodLabel = (period) => {
   return `คาบ ${period}`;
 };
 
+// รัน mapFn บน items พร้อมกันได้ไม่เกิน `limit` รายการต่อครั้ง (กัน 429 rate limit จากการยิง request พร้อมกันเยอะเกินไป)
+const mapWithConcurrency = async (items, limit, mapFn) => {
+  const results = new Array(items.length);
+  let nextIndex = 0;
+  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (nextIndex < items.length) {
+      const i = nextIndex++;
+      results[i] = await mapFn(items[i], i);
+    }
+  });
+  await Promise.all(workers);
+  return results;
+};
+
 // คืนช่วงคาบที่ overlap กับช่วง start-end เช่น "1", "1-3"
 const calcPeriodFromTime = (start, end, periodSlots) => {
   if (!start || !end) return '';
@@ -125,9 +139,8 @@ const SubjectManagement = ({ onSubjectsUpdate, selectedTeacher, teachers = [], o
       if (data.success && data.data) {
         const dayNames = ['', 'จันทร์', 'อังคาร', 'พุธ', 'พฤหัสบดี', 'ศุกร์', 'เสาร์', 'อาทิตย์'];
 
-        // ดึง schedule ของทุก subject แล้วแตกเป็น 1 แถวต่อ 1 schedule
-        const rows = (await Promise.all(
-          data.data.map(async (subject) => {
+        // ดึง schedule ของทุก subject แล้วแตกเป็น 1 แถวต่อ 1 schedule (จำกัด concurrency กัน 429)
+        const rows = (await mapWithConcurrency(data.data, 5, async (subject) => {
             try {
               const scheduleData = await scheduleAPI.getSchedulesBySubject(subject.id, {}, token);
               if (scheduleData.success && scheduleData.data && scheduleData.data.length > 0) {
@@ -188,8 +201,7 @@ const SubjectManagement = ({ onSubjectsUpdate, selectedTeacher, teachers = [], o
               semester: '-',
               academicYear: '-',
             }];
-          })
-        )).flat();
+        })).flat();
 
         setSubjects(rows);
       } else {
