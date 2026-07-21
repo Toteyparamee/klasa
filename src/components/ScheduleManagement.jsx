@@ -53,6 +53,7 @@ const ScheduleManagement = ({ school }) => {
             onTeacherChange={setSelectedTeacher}
             periodConfigVersion={periodConfigVersion}
             school={school}
+            classrooms={school?.classrooms || []}
           />
         </div>
         <div style={{ display: activeSubTab === 'subjects' ? 'block' : 'none' }}>

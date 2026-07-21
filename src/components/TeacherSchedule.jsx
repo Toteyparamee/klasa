@@ -1,13 +1,14 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { scheduleAPI, getToken, API_CONFIG } from '../api';
+import { scheduleAPI, subjectAPI, getToken, API_CONFIG } from '../api';
 import { getCurrentSemester } from '../api/settingsApi';
 import { loadPeriodConfig } from './PeriodGridSettings';
 import { periodGridAPI } from '../api/scheduleApi';
 import { useSchoolId } from '../hooks/useSchoolId';
 import { buildURL } from '../api/config';
 import { uploadAPI } from '../api/uploadApi';
+import { useAuth } from '../context/AuthContext';
 
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -38,8 +39,36 @@ const mapWithThrottle = async (items, delayMs, mapFn) => {
 
 const ALL_TEACHERS_VALUE = 'ALL';
 
-const TeacherSchedule = ({ teachers = [], selectedTeacher, onTeacherChange, periodConfigVersion = 0, school }) => {
+const timeToMinutesModule = (t) => {
+  if (!t) return 0;
+  const [h, m] = t.replace('.', ':').split(':').map(Number);
+  return h * 60 + (m || 0);
+};
+
+// คืนช่วงคาบที่ overlap กับช่วง start-end เช่น "1", "1-3"
+const calcPeriodFromTime = (start, end, periodSlots) => {
+  if (!start || !end) return '';
+  const s = timeToMinutesModule(start);
+  const e = timeToMinutesModule(end);
+  const matched = [];
+  let periodNum = 1;
+  for (const slot of periodSlots) {
+    const isBreak = slot.isBreak ?? slot.is_break ?? false;
+    if (!isBreak) {
+      const ss = timeToMinutesModule(slot.start);
+      const se = timeToMinutesModule(slot.end);
+      if (s < se && e > ss) matched.push(periodNum);
+      periodNum++;
+    }
+  }
+  if (matched.length === 0) return '';
+  if (matched.length === 1) return String(matched[0]);
+  return `${matched[0]}-${matched[matched.length - 1]}`;
+};
+
+const TeacherSchedule = ({ teachers = [], selectedTeacher, onTeacherChange, periodConfigVersion = 0, school, classrooms = [] }) => {
   const schoolId = useSchoolId();
+  const { getValidToken } = useAuth();
   const [schedules, setSchedules] = useState([]);
   const [allTeacherSchedules, setAllTeacherSchedules] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -48,6 +77,10 @@ const TeacherSchedule = ({ teachers = [], selectedTeacher, onTeacherChange, peri
   const [semesterInfo, setSemesterInfo] = useState(null);
   const [logoBase64, setLogoBase64] = useState(null);
   const printRef = useRef(null);
+  const [detailItem, setDetailItem] = useState(null); // raw schedule item ที่กำลังดู/แก้ไข
+  const [isEditingDetail, setIsEditingDetail] = useState(false);
+  const [detailFormData, setDetailFormData] = useState(null);
+  const [detailSaving, setDetailSaving] = useState(false);
 
   const isAllTeachers = selectedTeacher === ALL_TEACHERS_VALUE;
 
@@ -244,6 +277,7 @@ const TeacherSchedule = ({ teachers = [], selectedTeacher, onTeacherChange, peri
         subjectCode: subject.subject_code || '',
         className,
         room: item.room || '',
+        raw: item,
       };
     });
 
@@ -284,7 +318,104 @@ const TeacherSchedule = ({ teachers = [], selectedTeacher, onTeacherChange, peri
   const grid = convertToGridFormat(schedules);
   const classColors = getClassColors(grid);
 
-  const renderScheduleGrid = (gridData, colors) => (
+  const openDetail = (item) => {
+    setDetailItem(item);
+    setIsEditingDetail(false);
+    setDetailFormData(null);
+  };
+
+  const closeDetail = () => {
+    setDetailItem(null);
+    setIsEditingDetail(false);
+    setDetailFormData(null);
+  };
+
+  const openEditFromDetail = (itemOverride) => {
+    const item = itemOverride || detailItem;
+    if (!item) return;
+    if (itemOverride) setDetailItem(itemOverride);
+    setDetailFormData({
+      subjectName: item.subject?.subject_name || '',
+      subjectCode: item.subject?.subject_code || '',
+      credits: item.subject?.credits !== undefined && item.subject?.credits !== null
+        ? String(item.subject.credits) : '',
+      classId: item.class_id?.toString() || '',
+      dayOfWeek: item.day_of_week?.toString() || '',
+      startTime: item.start_time || '',
+      endTime: item.end_time || '',
+      room: item.room || '',
+    });
+    setIsEditingDetail(true);
+  };
+
+  const handleDetailFormChange = (e) => {
+    const { name, value } = e.target;
+    setDetailFormData(prev => ({ ...prev, [name]: value }));
+  };
+
+  const handleSaveDetail = async () => {
+    if (!detailItem || !detailFormData) return;
+    if (!detailFormData.subjectName || !detailFormData.subjectCode || !detailFormData.classId ||
+      !detailFormData.dayOfWeek || !detailFormData.startTime || !detailFormData.endTime) {
+      alert('กรุณากรอกข้อมูลให้ครบถ้วน');
+      return;
+    }
+
+    setDetailSaving(true);
+    try {
+      const token = await getValidToken();
+      if (!token) {
+        alert('กรุณาเข้าสู่ระบบก่อน');
+        return;
+      }
+
+      const period = calcPeriodFromTime(detailFormData.startTime, detailFormData.endTime, periodSlots)
+        || detailItem.period?.toString() || '1';
+
+      const subjectRes = await subjectAPI.updateSubject(detailItem.subject_id, {
+        subject_name: detailFormData.subjectName,
+        subject_code: detailFormData.subjectCode,
+        credits: parseFloat(detailFormData.credits) || 0,
+      }, token);
+      if (!subjectRes.success) {
+        alert(`เกิดข้อผิดพลาดในการแก้ไขรายวิชา: ${subjectRes.message}`);
+        return;
+      }
+
+      const scheduleRes = await scheduleAPI.updateSchedule(detailItem.id, {
+        school_id: detailItem.school_id,
+        class_id: parseInt(detailFormData.classId),
+        subject_id: detailItem.subject_id,
+        teacher_code: detailItem.teacher_code,
+        day_of_week: parseInt(detailFormData.dayOfWeek),
+        period: parseInt(period) || 1,
+        start_time: detailFormData.startTime,
+        end_time: detailFormData.endTime,
+        room: detailFormData.room,
+        semester: detailItem.semester,
+        academic_year: detailItem.academic_year,
+      }, token);
+      if (!scheduleRes.success) {
+        alert(`เกิดข้อผิดพลาดในการแก้ไขตารางสอน: ${scheduleRes.message}`);
+        return;
+      }
+
+      alert('บันทึกการแก้ไขสำเร็จ');
+      closeDetail();
+      if (isAllTeachers) {
+        await fetchAllTeacherSchedules();
+      } else {
+        await fetchTeacherSchedule();
+      }
+    } catch (error) {
+      console.error('Error saving schedule detail:', error);
+      alert('เกิดข้อผิดพลาดในการบันทึกข้อมูล');
+    } finally {
+      setDetailSaving(false);
+    }
+  };
+
+  const renderScheduleGrid = (gridData, colors, editable = false) => (
     <div className="overflow-x-auto rounded-xl shadow-sm border border-slate-200">
       <table className="w-full border-collapse bg-white text-sm" style={{ minWidth: 700 }}>
         <thead>
@@ -327,7 +458,7 @@ const TeacherSchedule = ({ teachers = [], selectedTeacher, onTeacherChange, peri
                   return (
                     <td key={`${day}-${slot.label}`} className="border border-slate-100 min-w-[120px] align-top">
                       <div
-                        className="m-1 p-2 rounded-lg flex flex-col gap-0.5 min-h-[60px]"
+                        className="group relative m-1 p-2 rounded-lg flex flex-col gap-0.5 min-h-[60px]"
                         style={{
                           background: `linear-gradient(135deg, ${color}30, ${color}18)`,
                           borderLeft: `4px solid ${color}`,
@@ -347,6 +478,26 @@ const TeacherSchedule = ({ teachers = [], selectedTeacher, onTeacherChange, peri
                         {slotData.room && (
                           <div className="text-[0.6875rem] mt-0.5" style={{ color: `${color}AA` }}>
                             ห้อง {slotData.room}
+                          </div>
+                        )}
+                        {editable && slotData.raw && (
+                          <div className="hidden group-hover:flex absolute inset-0 bg-white/90 backdrop-blur-[1px] rounded-lg flex-col items-center justify-center gap-1 p-1">
+                            <button
+                              type="button"
+                              onClick={() => openDetail(slotData.raw)}
+                              className="w-full text-[0.6875rem] font-semibold px-2 py-1 rounded-md bg-slate-100 text-slate-700 hover:bg-slate-200 transition-colors"
+                            >
+                              ดูรายละเอียด
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => openEditFromDetail(slotData.raw)}
+                              className="w-full text-[0.6875rem] font-semibold px-2 py-1 rounded-md text-white transition-colors"
+                              style={{ backgroundColor: color }}
+                            >
+                              แก้ไข
+                            </button>
+                            
                           </div>
                         )}
                       </div>
@@ -648,7 +799,7 @@ const TeacherSchedule = ({ teachers = [], selectedTeacher, onTeacherChange, peri
           {renderClassLegend(classColors)}
 
           {/* ตาราง Grid */}
-          {renderScheduleGrid(grid, classColors)}
+          {renderScheduleGrid(grid, classColors, true)}
 
           {/* สรุปข้อมูล */}
           {schedules.length > 0 && (
@@ -665,8 +816,179 @@ const TeacherSchedule = ({ teachers = [], selectedTeacher, onTeacherChange, peri
           )}
         </div>
       )}
+
+      {/* Modal รายละเอียด / แก้ไข คาบสอน */}
+      {detailItem && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" onClick={closeDetail}>
+          <div
+            className="bg-white rounded-xl shadow-xl w-full max-w-md max-h-[85vh] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200">
+              <h3 className="text-lg font-bold text-slate-800">
+                {isEditingDetail ? 'แก้ไขตารางสอน' : 'รายละเอียดตารางสอน'}
+              </h3>
+              <button
+                type="button"
+                onClick={closeDetail}
+                className="text-slate-400 hover:text-slate-600 text-xl leading-none"
+              >
+                ×
+              </button>
+            </div>
+
+            {!isEditingDetail ? (
+              <div className="px-5 py-4 flex flex-col gap-3 text-sm">
+                <DetailRow label="รหัสวิชา" value={detailItem.subject?.subject_code || '-'} />
+                <DetailRow label="ชื่อวิชา" value={detailItem.subject?.subject_name || '-'} />
+                <DetailRow label="หน่วยกิต" value={detailItem.subject?.credits ?? '-'} />
+                <DetailRow label="ห้องเรียน" value={classrooms.find(c => c.id === detailItem.class_id)?.name || `ห้อง ${detailItem.class_id}`} />
+                <DetailRow label="วัน" value={getDayName(detailItem.day_of_week) || '-'} />
+                <DetailRow label="เวลา" value={`${normalizeTime(detailItem.start_time)} - ${normalizeTime(detailItem.end_time)}`} />
+                <DetailRow label="ห้องสอน" value={detailItem.room || '-'} />
+
+                <div className="flex gap-2 mt-3">
+                  <button
+                    type="button"
+                    onClick={() => openEditFromDetail()}
+                    className="flex-1 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold rounded-lg transition-colors"
+                  >
+                    แก้ไข
+                  </button>
+                  <button
+                    type="button"
+                    onClick={closeDetail}
+                    className="flex-1 px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-semibold rounded-lg transition-colors"
+                  >
+                    ปิด
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="px-5 py-4 flex flex-col gap-3 text-sm">
+                <FormField label="รหัสวิชา *">
+                  <input
+                    type="text"
+                    name="subjectCode"
+                    value={detailFormData?.subjectCode || ''}
+                    onChange={handleDetailFormChange}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20"
+                  />
+                </FormField>
+                <FormField label="ชื่อวิชา *">
+                  <input
+                    type="text"
+                    name="subjectName"
+                    value={detailFormData?.subjectName || ''}
+                    onChange={handleDetailFormChange}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20"
+                  />
+                </FormField>
+                <FormField label="หน่วยกิต">
+                  <input
+                    type="number"
+                    step="0.5"
+                    name="credits"
+                    value={detailFormData?.credits || ''}
+                    onChange={handleDetailFormChange}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20"
+                  />
+                </FormField>
+                <FormField label="ห้องเรียน *">
+                  <select
+                    name="classId"
+                    value={detailFormData?.classId || ''}
+                    onChange={handleDetailFormChange}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20"
+                  >
+                    <option value="">-- เลือกห้องเรียน --</option>
+                    {classrooms.map((c) => (
+                      <option key={c.id} value={c.id}>{c.name}</option>
+                    ))}
+                  </select>
+                </FormField>
+                <FormField label="วัน *">
+                  <select
+                    name="dayOfWeek"
+                    value={detailFormData?.dayOfWeek || ''}
+                    onChange={handleDetailFormChange}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20"
+                  >
+                    <option value="">-- เลือกวัน --</option>
+                    {[1, 2, 3, 4, 5, 6, 7].map((d) => (
+                      <option key={d} value={d}>{getDayName(d)}</option>
+                    ))}
+                  </select>
+                </FormField>
+                <div className="flex gap-2">
+                  <FormField label="เวลาเริ่ม *">
+                    <input
+                      type="time"
+                      name="startTime"
+                      value={detailFormData?.startTime || ''}
+                      onChange={handleDetailFormChange}
+                      className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20"
+                    />
+                  </FormField>
+                  <FormField label="เวลาสิ้นสุด *">
+                    <input
+                      type="time"
+                      name="endTime"
+                      value={detailFormData?.endTime || ''}
+                      onChange={handleDetailFormChange}
+                      className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20"
+                    />
+                  </FormField>
+                </div>
+                <FormField label="ห้องสอน">
+                  <input
+                    type="text"
+                    name="room"
+                    value={detailFormData?.room || ''}
+                    onChange={handleDetailFormChange}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20"
+                  />
+                </FormField>
+
+                <div className="flex gap-2 mt-3">
+                  <button
+                    type="button"
+                    onClick={handleSaveDetail}
+                    disabled={detailSaving}
+                    className="flex-1 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-400 text-white text-sm font-semibold rounded-lg transition-colors"
+                  >
+                    {detailSaving ? 'กำลังบันทึก...' : 'บันทึก'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setIsEditingDetail(false)}
+                    disabled={detailSaving}
+                    className="flex-1 px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-semibold rounded-lg transition-colors"
+                  >
+                    ยกเลิก
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 };
+
+const DetailRow = ({ label, value }) => (
+  <div className="flex justify-between gap-3">
+    <span className="text-slate-400">{label}</span>
+    <span className="font-semibold text-slate-800 text-right">{value}</span>
+  </div>
+);
+
+const FormField = ({ label, children }) => (
+  <div className="flex flex-col gap-1 flex-1">
+    <label className="text-[0.8125rem] font-semibold text-slate-500">{label}</label>
+    {children}
+  </div>
+);
 
 export default TeacherSchedule;
