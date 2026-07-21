@@ -18,6 +18,21 @@ const formatPeriodLabel = (period) => {
   return `คาบ ${period}`;
 };
 
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+// เรียก fn ซ้ำเมื่อเจอ rate limit (429) แบบรอนานขึ้นเรื่อย ๆ (exponential backoff)
+const withRateLimitRetry = async (fn, { retries = 4, baseDelayMs = 500 } = {}) => {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      const isRateLimited = err?.message?.toLowerCase().includes('rate limit');
+      if (!isRateLimited || attempt >= retries) throw err;
+      await sleep(baseDelayMs * 2 ** attempt);
+    }
+  }
+};
+
 // รัน mapFn บน items พร้อมกันได้ไม่เกิน `limit` รายการต่อครั้ง (กัน 429 rate limit จากการยิง request พร้อมกันเยอะเกินไป)
 const mapWithConcurrency = async (items, limit, mapFn) => {
   const results = new Array(items.length);
@@ -25,7 +40,7 @@ const mapWithConcurrency = async (items, limit, mapFn) => {
   const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
     while (nextIndex < items.length) {
       const i = nextIndex++;
-      results[i] = await mapFn(items[i], i);
+      results[i] = await withRateLimitRetry(() => mapFn(items[i], i));
     }
   });
   await Promise.all(workers);
@@ -140,7 +155,7 @@ const SubjectManagement = ({ onSubjectsUpdate, selectedTeacher, teachers = [], o
         const dayNames = ['', 'จันทร์', 'อังคาร', 'พุธ', 'พฤหัสบดี', 'ศุกร์', 'เสาร์', 'อาทิตย์'];
 
         // ดึง schedule ของทุก subject แล้วแตกเป็น 1 แถวต่อ 1 schedule (จำกัด concurrency กัน 429)
-        const rows = (await mapWithConcurrency(data.data, 5, async (subject) => {
+        const rows = (await mapWithConcurrency(data.data, 2, async (subject) => {
             try {
               const scheduleData = await scheduleAPI.getSchedulesBySubject(subject.id, {}, token);
               if (scheduleData.success && scheduleData.data && scheduleData.data.length > 0) {
@@ -509,22 +524,22 @@ const SubjectManagement = ({ onSubjectsUpdate, selectedTeacher, teachers = [], o
 
       const classNameById = new Map((classrooms || []).map(c => [c.id, c.name]));
 
-      const settled = await Promise.allSettled(
-        pairs.map(({ tc, cid }) =>
-          scheduleAPI.createSchedule({
-            school_id: schoolId,
-            class_id: cid,
-            subject_id: subjectData.data.id,
-            teacher_code: tc,
-            day_of_week: parseInt(specialFormData.dayOfWeek),
-            period: parseInt(period) || 1,
-            start_time: specialFormData.startTime,
-            end_time: specialFormData.endTime,
-            room: specialFormData.room,
-            semester: parseInt(specialFormData.semester),
-            academic_year: specialFormData.academicYear,
-          }, token)
-        )
+      const settled = await mapWithConcurrency(pairs, 2, ({ tc, cid }) =>
+        scheduleAPI.createSchedule({
+          school_id: schoolId,
+          class_id: cid,
+          subject_id: subjectData.data.id,
+          teacher_code: tc,
+          day_of_week: parseInt(specialFormData.dayOfWeek),
+          period: parseInt(period) || 1,
+          start_time: specialFormData.startTime,
+          end_time: specialFormData.endTime,
+          room: specialFormData.room,
+          semester: parseInt(specialFormData.semester),
+          academic_year: specialFormData.academicYear,
+        }, token)
+          .then(value => ({ status: 'fulfilled', value }))
+          .catch(reason => ({ status: 'rejected', reason }))
       );
 
       const failed = [];

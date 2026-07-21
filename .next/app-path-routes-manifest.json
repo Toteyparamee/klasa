@@ -2,14 +2,14 @@
   "/_not-found/page": "/_not-found",
   "/dashboard/page": "/dashboard",
   "/academic-report/page": "/academic-report",
-  "/page": "/",
   "/emergency/page": "/emergency",
-  "/behavior/page": "/behavior",
+  "/news/[newsId]/registrations/page": "/news/[newsId]/registrations",
+  "/page": "/",
   "/personnel/page": "/personnel",
   "/school/[schoolId]/page": "/school/[schoolId]",
   "/news/page": "/news",
-  "/news/[newsId]/registrations/page": "/news/[newsId]/registrations",
-  "/settings/page": "/settings",
+  "/behavior/page": "/behavior",
   "/reset-password/page": "/reset-password",
+  "/settings/page": "/settings",
   "/users/page": "/users"
 }
