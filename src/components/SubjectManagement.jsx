@@ -20,30 +20,28 @@ const formatPeriodLabel = (period) => {
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-// เรียก fn ซ้ำเมื่อเจอ rate limit (429) แบบรอนานขึ้นเรื่อย ๆ (exponential backoff)
-const withRateLimitRetry = async (fn, { retries = 4, baseDelayMs = 500 } = {}) => {
+// เรียก fn ซ้ำเมื่อเจอ rate limit (429) โดยรอเป็นวินาที (Kong จำกัดแบบ 100 req/นาที ต่อ consumer
+// ดังนั้นโดน 429 แปลว่าต้องรอ window ถัดไป ไม่ใช่แค่รอมิลลิวินาที)
+const withRateLimitRetry = async (fn, { retries = 3, baseDelayMs = 5000 } = {}) => {
   for (let attempt = 0; ; attempt++) {
     try {
       return await fn();
     } catch (err) {
       const isRateLimited = err?.message?.toLowerCase().includes('rate limit');
       if (!isRateLimited || attempt >= retries) throw err;
-      await sleep(baseDelayMs * 2 ** attempt);
+      await sleep(baseDelayMs * (attempt + 1));
     }
   }
 };
 
-// รัน mapFn บน items พร้อมกันได้ไม่เกิน `limit` รายการต่อครั้ง (กัน 429 rate limit จากการยิง request พร้อมกันเยอะเกินไป)
-const mapWithConcurrency = async (items, limit, mapFn) => {
+// รัน mapFn ทีละ item เว้นจังหวะ delayMs ต่อ item (Kong จำกัด 100 req/นาที ต่อ consumer รวมทุก endpoint
+// บนหน้าเว็บ จึงต้อง throttle แบบ sequential แทนที่จะยิงพร้อมกัน ไม่ว่า concurrency จะต่ำแค่ไหนก็ตาม)
+const mapWithThrottle = async (items, delayMs, mapFn) => {
   const results = new Array(items.length);
-  let nextIndex = 0;
-  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
-    while (nextIndex < items.length) {
-      const i = nextIndex++;
-      results[i] = await withRateLimitRetry(() => mapFn(items[i], i));
-    }
-  });
-  await Promise.all(workers);
+  for (let i = 0; i < items.length; i++) {
+    results[i] = await withRateLimitRetry(() => mapFn(items[i], i));
+    if (i < items.length - 1) await sleep(delayMs);
+  }
   return results;
 };
 
@@ -155,7 +153,7 @@ const SubjectManagement = ({ onSubjectsUpdate, selectedTeacher, teachers = [], o
         const dayNames = ['', 'จันทร์', 'อังคาร', 'พุธ', 'พฤหัสบดี', 'ศุกร์', 'เสาร์', 'อาทิตย์'];
 
         // ดึง schedule ของทุก subject แล้วแตกเป็น 1 แถวต่อ 1 schedule (จำกัด concurrency กัน 429)
-        const rows = (await mapWithConcurrency(data.data, 2, async (subject) => {
+        const rows = (await mapWithThrottle(data.data, 20, async (subject) => {
             try {
               const scheduleData = await scheduleAPI.getSchedulesBySubject(subject.id, {}, token);
               if (scheduleData.success && scheduleData.data && scheduleData.data.length > 0) {
@@ -524,7 +522,7 @@ const SubjectManagement = ({ onSubjectsUpdate, selectedTeacher, teachers = [], o
 
       const classNameById = new Map((classrooms || []).map(c => [c.id, c.name]));
 
-      const settled = await mapWithConcurrency(pairs, 2, ({ tc, cid }) =>
+      const settled = await mapWithThrottle(pairs, 20, ({ tc, cid }) =>
         scheduleAPI.createSchedule({
           school_id: schoolId,
           class_id: cid,
