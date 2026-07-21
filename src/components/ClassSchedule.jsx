@@ -9,6 +9,34 @@ import { useSchoolId } from '../hooks/useSchoolId';
 import { useAuth } from '../context/AuthContext';
 import { useScheduleConflict } from '../hooks/useScheduleConflict';
 
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+// เรียก fn ซ้ำเมื่อเจอ rate limit (429) โดยรอเป็นวินาที (Kong จำกัดแบบต่อนาทีต่อ consumer
+// ดังนั้นโดน 429 แปลว่าต้องรอ window ถัดไป ไม่ใช่แค่รอมิลลิวินาที)
+const withRateLimitRetry = async (fn, { retries = 3, baseDelayMs = 5000 } = {}) => {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      const isRateLimited = err?.message?.toLowerCase().includes('rate limit');
+      if (!isRateLimited || attempt >= retries) throw err;
+      await sleep(baseDelayMs * (attempt + 1));
+    }
+  }
+};
+
+// รัน mapFn ทีละ item เว้นจังหวะ delayMs ต่อ item กัน rate limit จากการยิงพร้อมกันเยอะเกินไป
+const mapWithThrottle = async (items, delayMs, mapFn) => {
+  const results = new Array(items.length);
+  for (let i = 0; i < items.length; i++) {
+    results[i] = await withRateLimitRetry(() => mapFn(items[i], i));
+    if (i < items.length - 1) await sleep(delayMs);
+  }
+  return results;
+};
+
+const ALL_CLASSES_VALUE = 'ALL';
+
 const timeToMinutesModule = (t) => {
   if (!t) return 0;
   const [h, m] = t.replace('.', ':').split(':').map(Number);
@@ -40,6 +68,7 @@ const ClassSchedule = ({ classrooms = [], teachers = [], selectedClassId, onClas
   const schoolId = useSchoolId();
   const { getValidToken } = useAuth();
   const [schedules, setSchedules] = useState([]);
+  const [allClassSchedules, setAllClassSchedules] = useState([]);
   const [loading, setLoading] = useState(false);
   const [periodSlots, setPeriodSlots] = useState(loadPeriodConfig());
   const [detailItem, setDetailItem] = useState(null); // raw schedule item ที่กำลังดู/แก้ไข
@@ -52,6 +81,8 @@ const ClassSchedule = ({ classrooms = [], teachers = [], selectedClassId, onClas
     detailItem?.semester,
     detailItem?.academic_year
   );
+
+  const isAllClasses = selectedClassId === ALL_CLASSES_VALUE;
 
   const days = ['จันทร์', 'อังคาร', 'พุธ', 'พฤหัสบดี', 'ศุกร์'];
 
@@ -94,11 +125,31 @@ const ClassSchedule = ({ classrooms = [], teachers = [], selectedClassId, onClas
   useEffect(() => {
     if (!selectedClassId) {
       setSchedules([]);
+      setAllClassSchedules([]);
       return;
     }
-    fetchClassSchedule();
+    if (isAllClasses) {
+      fetchAllClassSchedules();
+    } else {
+      fetchClassSchedule();
+    }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedClassId, periodConfigVersion]);
+
+  const resolveCurrentSemester = async () => {
+    let semester = API_CONFIG.DEFAULT_SEMESTER;
+    let academicYear = API_CONFIG.DEFAULT_ACADEMIC_YEAR;
+    try {
+      const current = await getCurrentSemester();
+      if (current?.data) {
+        semester = current.data.semester ?? semester;
+        academicYear = String(current.data.academic_year ?? academicYear);
+      }
+    } catch {
+      // ใช้ค่า default
+    }
+    return { semester, academicYear };
+  };
 
   const fetchClassSchedule = async () => {
     setLoading(true);
@@ -106,17 +157,7 @@ const ClassSchedule = ({ classrooms = [], teachers = [], selectedClassId, onClas
       const token = getToken();
       if (!token) { setLoading(false); return; }
 
-      let semester = API_CONFIG.DEFAULT_SEMESTER;
-      let academicYear = API_CONFIG.DEFAULT_ACADEMIC_YEAR;
-      try {
-        const current = await getCurrentSemester();
-        if (current?.data) {
-          semester = current.data.semester ?? semester;
-          academicYear = String(current.data.academic_year ?? academicYear);
-        }
-      } catch {
-        // ใช้ค่า default
-      }
+      const { semester, academicYear } = await resolveCurrentSemester();
 
       const data = await scheduleAPI.getSchedulesByClass(selectedClassId, { semester, academicYear }, token);
 
@@ -128,6 +169,35 @@ const ClassSchedule = ({ classrooms = [], teachers = [], selectedClassId, onClas
     } catch (error) {
       console.error('Error fetching class schedule:', error);
       setSchedules([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchAllClassSchedules = async () => {
+    if (classrooms.length === 0) {
+      setAllClassSchedules([]);
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const token = getToken();
+      if (!token) { setLoading(false); return; }
+
+      const { semester, academicYear } = await resolveCurrentSemester();
+
+      const results = await mapWithThrottle(classrooms, 20, async (classroom) => {
+        try {
+          const data = await scheduleAPI.getSchedulesByClass(classroom.id, { semester, academicYear }, token);
+          return { classroom, schedules: data.success && data.data ? data.data : [] };
+        } catch (error) {
+          console.error('Error fetching schedule for class:', classroom.id, error);
+          return { classroom, schedules: [] };
+        }
+      });
+
+      setAllClassSchedules(results.filter(r => r.schedules.length > 0));
     } finally {
       setLoading(false);
     }
@@ -227,6 +297,107 @@ const ClassSchedule = ({ classrooms = [], teachers = [], selectedClassId, onClas
     excludeScheduleId: detailItem?.id,
   }) : null;
 
+  const renderSubjectLegend = (colors) => (
+    Object.keys(colors).length > 0 && (
+      <div className="flex flex-wrap gap-2 mb-5">
+        {Object.entries(colors).map(([name, color]) => (
+          <div
+            key={name}
+            className="flex items-center gap-1.5 px-2.5 py-1 rounded-full border-[1.5px] text-[0.8125rem] font-semibold"
+            style={{ borderColor: color, backgroundColor: `${color}15` }}
+          >
+            <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: color }} />
+            <span style={{ color }}>{name}</span>
+          </div>
+        ))}
+      </div>
+    )
+  );
+
+  const renderScheduleGrid = (gridData, colors) => (
+    <div className="overflow-x-auto rounded-xl shadow-sm border border-slate-200">
+      <table className="w-full border-collapse bg-white text-sm" style={{ minWidth: 700 }}>
+        <thead>
+          <tr className="bg-slate-50">
+            <th className="text-left pl-4 pr-2.5 py-3 font-bold text-slate-500 border-b-2 border-slate-200 whitespace-nowrap min-w-[110px]">
+              เวลา
+            </th>
+            {days.map(day => (
+              <th key={day} className="text-center px-2.5 py-3 font-bold text-slate-500 border-b-2 border-slate-200 whitespace-nowrap">
+                {day}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {periodSlots.map((slot) => (
+            <tr key={slot.label} className={slot.isBreak ? 'bg-yellow-50' : ''}>
+              <td className="bg-slate-50 pl-4 pr-2.5 py-2 align-middle border border-slate-100">
+                <div className="flex flex-col">
+                  <span className="font-bold text-slate-700 text-[0.8125rem]">{slot.label}</span>
+                  <span className="text-[0.75rem] text-slate-400">{slot.start}-{slot.end}</span>
+                </div>
+              </td>
+
+              {days.map(day => {
+                if (slot.isBreak) {
+                  return (
+                    <td key={`${day}-break`} className="text-center text-amber-700 text-[0.8125rem] font-semibold px-2 py-2 border border-slate-100 bg-yellow-50">
+                      พักกลางวัน
+                    </td>
+                  );
+                }
+
+                const daySchedule = gridData[day] || {};
+                const slotData = findScheduleForSlot(daySchedule, slot);
+
+                if (slotData) {
+                  const color = colors[slotData.subject] || '#6366F1';
+                  return (
+                    <td key={`${day}-${slot.label}`} className="border border-slate-100 min-w-[120px] align-top">
+                      <div
+                        onClick={() => openDetail(slotData.raw)}
+                        className="relative m-1 p-2 rounded-lg flex flex-col gap-0.5 min-h-[60px] cursor-pointer hover:ring-2 hover:ring-offset-1 transition-shadow"
+                        style={{
+                          background: `linear-gradient(135deg, ${color}30, ${color}18)`,
+                          borderLeft: `4px solid ${color}`,
+                          '--tw-ring-color': color,
+                        }}
+                      >
+                        {slotData.subjectCode && (
+                          <div className="text-[0.7rem] font-bold tracking-wide" style={{ color: `${color}CC` }}>
+                            {slotData.subjectCode}
+                          </div>
+                        )}
+                        <div className="text-[0.8125rem] font-bold" style={{ color }}>
+                          {slotData.subject}
+                        </div>
+                        <div className="text-[0.75rem] text-slate-500 leading-snug">
+                          {slotData.teacherName}
+                        </div>
+                        {slotData.room && (
+                          <div className="text-[0.6875rem] mt-0.5" style={{ color: `${color}AA` }}>
+                            ห้อง {slotData.room}
+                          </div>
+                        )}
+                      </div>
+                    </td>
+                  );
+                }
+
+                return (
+                  <td key={`${day}-${slot.label}`} className="border border-slate-100 text-center px-2 py-3 min-w-[120px]">
+                    <span className="text-slate-300 text-base">-</span>
+                  </td>
+                );
+              })}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+
   const openDetail = (item) => {
     setDetailItem(item);
     setIsEditingDetail(false);
@@ -312,7 +483,11 @@ const ClassSchedule = ({ classrooms = [], teachers = [], selectedClassId, onClas
       alert('บันทึกการแก้ไขสำเร็จ');
       closeDetail();
       reloadSchedules();
-      await fetchClassSchedule();
+      if (isAllClasses) {
+        await fetchAllClassSchedules();
+      } else {
+        await fetchClassSchedule();
+      }
     } catch (error) {
       console.error('Error saving schedule detail:', error);
       alert('เกิดข้อผิดพลาดในการบันทึกข้อมูล');
@@ -338,6 +513,7 @@ const ClassSchedule = ({ classrooms = [], teachers = [], selectedClassId, onClas
           className="px-3.5 py-2 border border-slate-300 rounded-lg text-[0.9375rem] text-slate-800 bg-white cursor-pointer min-w-[220px] outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-colors"
         >
           <option value="">-- เลือกห้องเรียน --</option>
+          <option value={ALL_CLASSES_VALUE}>ห้องทั้งหมด</option>
           {classrooms.map((classroom, index) => (
             <option key={classroom.id || index} value={classroom.id}>
               {classroom.name}
@@ -357,6 +533,30 @@ const ClassSchedule = ({ classrooms = [], teachers = [], selectedClassId, onClas
           <div className="w-8 h-8 border-[3px] border-slate-200 border-t-indigo-500 rounded-full animate-spin" />
           <p>กำลังโหลดตารางเรียน...</p>
         </div>
+      ) : isAllClasses ? (
+        allClassSchedules.length === 0 ? (
+          <div className="text-center py-16 text-slate-400">
+            <div className="text-5xl mb-3">📋</div>
+            <p>ไม่พบตารางเรียนของห้องในโรงเรียนนี้</p>
+          </div>
+        ) : (
+          <div className="flex flex-col gap-8">
+            {allClassSchedules.map(({ classroom, schedules: classSchedules }) => {
+              const classGrid = convertToGridFormat(classSchedules);
+              const classColors = getSubjectColors(classGrid);
+              return (
+                <div key={classroom.id} className="pb-8 border-b border-slate-200 last:border-b-0">
+                  <div className="flex items-center gap-2 mb-4 text-[0.9375rem]">
+                    <span className="text-slate-500 font-medium">ตารางเรียนของห้อง:</span>
+                    <span className="font-bold text-slate-800">{classroom.name}</span>
+                  </div>
+                  {renderSubjectLegend(classColors)}
+                  {renderScheduleGrid(classGrid, classColors)}
+                </div>
+              );
+            })}
+          </div>
+        )
       ) : (
         <div>
           <div className="flex items-center gap-2 mb-4 text-[0.9375rem]">
@@ -367,103 +567,10 @@ const ClassSchedule = ({ classrooms = [], teachers = [], selectedClassId, onClas
           </div>
 
           {/* Legend สีวิชา */}
-          {Object.keys(subjectColors).length > 0 && (
-            <div className="flex flex-wrap gap-2 mb-5">
-              {Object.entries(subjectColors).map(([name, color]) => (
-                <div
-                  key={name}
-                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-full border-[1.5px] text-[0.8125rem] font-semibold"
-                  style={{ borderColor: color, backgroundColor: `${color}15` }}
-                >
-                  <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: color }} />
-                  <span style={{ color }}>{name}</span>
-                </div>
-              ))}
-            </div>
-          )}
+          {renderSubjectLegend(subjectColors)}
 
           {/* ตาราง Grid */}
-          <div className="overflow-x-auto rounded-xl shadow-sm border border-slate-200">
-            <table className="w-full border-collapse bg-white text-sm" style={{ minWidth: 700 }}>
-              <thead>
-                <tr className="bg-slate-50">
-                  <th className="text-left pl-4 pr-2.5 py-3 font-bold text-slate-500 border-b-2 border-slate-200 whitespace-nowrap min-w-[110px]">
-                    เวลา
-                  </th>
-                  {days.map(day => (
-                    <th key={day} className="text-center px-2.5 py-3 font-bold text-slate-500 border-b-2 border-slate-200 whitespace-nowrap">
-                      {day}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {periodSlots.map((slot) => (
-                  <tr key={slot.label} className={slot.isBreak ? 'bg-yellow-50' : ''}>
-                    <td className="bg-slate-50 pl-4 pr-2.5 py-2 align-middle border border-slate-100">
-                      <div className="flex flex-col">
-                        <span className="font-bold text-slate-700 text-[0.8125rem]">{slot.label}</span>
-                        <span className="text-[0.75rem] text-slate-400">{slot.start}-{slot.end}</span>
-                      </div>
-                    </td>
-
-                    {days.map(day => {
-                      if (slot.isBreak) {
-                        return (
-                          <td key={`${day}-break`} className="text-center text-amber-700 text-[0.8125rem] font-semibold px-2 py-2 border border-slate-100 bg-yellow-50">
-                            พักกลางวัน
-                          </td>
-                        );
-                      }
-
-                      const daySchedule = grid[day] || {};
-                      const slotData = findScheduleForSlot(daySchedule, slot);
-
-                      if (slotData) {
-                        const color = subjectColors[slotData.subject] || '#6366F1';
-                        return (
-                          <td key={`${day}-${slot.label}`} className="border border-slate-100 min-w-[120px] align-top">
-                            <div
-                              onClick={() => openDetail(slotData.raw)}
-                              className="relative m-1 p-2 rounded-lg flex flex-col gap-0.5 min-h-[60px] cursor-pointer hover:ring-2 hover:ring-offset-1 transition-shadow"
-                              style={{
-                                background: `linear-gradient(135deg, ${color}30, ${color}18)`,
-                                borderLeft: `4px solid ${color}`,
-                                '--tw-ring-color': color,
-                              }}
-                            >
-                              {slotData.subjectCode && (
-                                <div className="text-[0.7rem] font-bold tracking-wide" style={{ color: `${color}CC` }}>
-                                  {slotData.subjectCode}
-                                </div>
-                              )}
-                              <div className="text-[0.8125rem] font-bold" style={{ color }}>
-                                {slotData.subject}
-                              </div>
-                              <div className="text-[0.75rem] text-slate-500 leading-snug">
-                                {slotData.teacherName}
-                              </div>
-                              {slotData.room && (
-                                <div className="text-[0.6875rem] mt-0.5" style={{ color: `${color}AA` }}>
-                                  ห้อง {slotData.room}
-                                </div>
-                              )}
-                            </div>
-                          </td>
-                        );
-                      }
-
-                      return (
-                        <td key={`${day}-${slot.label}`} className="border border-slate-100 text-center px-2 py-3 min-w-[120px]">
-                          <span className="text-slate-300 text-base">-</span>
-                        </td>
-                      );
-                    })}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          {renderScheduleGrid(grid, subjectColors)}
 
           {/* สรุปข้อมูล */}
           {schedules.length > 0 && (
