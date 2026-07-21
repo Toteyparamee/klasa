@@ -89,10 +89,46 @@ const emptySpecialForm = {
   endTime: '',
   room: '',
   teacherCode: '',
-  classId: '',
+  classIds: [],
   dayOfWeek: '',
   semester: '1',
   academicYear: '2568',
+};
+
+const GRADE_GROUP_TOKENS = {
+  JUNIOR: [1, 2, 3],
+  SENIOR: [4, 5, 6],
+};
+
+// ดึงเลขระดับชั้น (1-6) จาก grade string เช่น "ม.1" หรือ "1" — คืน null ถ้าดึงไม่ได้
+const getGradeLevel = (grade) => {
+  const match = String(grade ?? '').match(/\d+/);
+  return match ? parseInt(match[0]) : null;
+};
+
+// แปลง token ที่เลือกใน multi-select (ALL / JUNIOR / SENIOR / G1..G6 / classId ตรงๆ)
+// ให้เป็น array ของ classroom id จริง ไม่ซ้ำ
+const resolveSelectedClassIds = (selectedTokens, classrooms) => {
+  const ids = new Set();
+  for (const token of selectedTokens) {
+    if (token === 'ALL') {
+      classrooms.forEach(c => ids.add(c.id));
+    } else if (token === 'JUNIOR' || token === 'SENIOR') {
+      const levels = GRADE_GROUP_TOKENS[token];
+      classrooms
+        .filter(c => levels.includes(getGradeLevel(c.grade)))
+        .forEach(c => ids.add(c.id));
+    } else if (token.startsWith('G')) {
+      const level = parseInt(token.slice(1));
+      classrooms
+        .filter(c => getGradeLevel(c.grade) === level)
+        .forEach(c => ids.add(c.id));
+    } else {
+      const cid = parseInt(token);
+      if (!Number.isNaN(cid)) ids.add(cid);
+    }
+  }
+  return [...ids];
 };
 
 const SubjectManagement = ({ onSubjectsUpdate, selectedTeacher, teachers = [], onTeacherChange, classrooms = [] }) => {
@@ -488,18 +524,24 @@ const SubjectManagement = ({ onSubjectsUpdate, selectedTeacher, teachers = [], o
     });
   };
 
+  const handleSpecialClassIdsChange = (e) => {
+    const selected = Array.from(e.target.selectedOptions).map(o => o.value);
+    setSpecialFormData(prev => ({ ...prev, classIds: selected }));
+  };
+
   const handleSpecialSubmit = async (e) => {
     e.preventDefault();
     if (!specialFormData.activityName || !specialFormData.startTime || !specialFormData.endTime || !specialFormData.semester || !specialFormData.academicYear) {
       alert('กรุณากรอกข้อมูลให้ครบถ้วน');
       return;
     }
-    if (!specialFormData.teacherCode || !specialFormData.classId || !specialFormData.dayOfWeek) {
+    if (!specialFormData.teacherCode || specialFormData.classIds.length === 0 || !specialFormData.dayOfWeek) {
       alert('กรุณาเลือกครู ชั้นเรียน และวันที่สอน');
       return;
     }
-    if (specialFormData.classId === 'ALL' && (!classrooms || classrooms.length === 0)) {
-      alert('ไม่พบข้อมูลห้องเรียนในโรงเรียนนี้');
+    const resolvedClassList = resolveSelectedClassIds(specialFormData.classIds, classrooms);
+    if (resolvedClassList.length === 0) {
+      alert('ไม่พบข้อมูลห้องเรียนที่เลือก');
       return;
     }
     try {
@@ -509,7 +551,7 @@ const SubjectManagement = ({ onSubjectsUpdate, selectedTeacher, teachers = [], o
       const creditsValue = specialFormData.creditType === '' ? 0 : null;
       const subjectData = await subjectAPI.createSubject({
         school_id: schoolId,
-        class_id: parseInt(specialFormData.classId) || 0,
+        class_id: resolvedClassList.length === 1 ? resolvedClassList[0] : 0,
         subject_code: specialFormData.creditType || 'พิเศษ',
         subject_name: specialFormData.activityName,
         credits: creditsValue ?? 0,
@@ -522,9 +564,8 @@ const SubjectManagement = ({ onSubjectsUpdate, selectedTeacher, teachers = [], o
 
       const period = calcPeriodFromTime(specialFormData.startTime, specialFormData.endTime, periodSlots) || '1';
       const isAllTeachers = specialFormData.teacherCode === 'ALL';
-      const isAllClasses = specialFormData.classId === 'ALL';
       const teacherList = isAllTeachers ? teachers.map(t => t.teacherCode) : [specialFormData.teacherCode];
-      const classList = isAllClasses ? classrooms.map(c => c.id) : [parseInt(specialFormData.classId)];
+      const classList = resolvedClassList;
 
       const pairs = [];
       teacherList.forEach(tc => classList.forEach(cid => pairs.push({ tc, cid })));
@@ -565,7 +606,7 @@ const SubjectManagement = ({ onSubjectsUpdate, selectedTeacher, teachers = [], o
 
       if (failed.length === 0) {
         const who = isAllTeachers ? `ครูทั้ง ${teacherList.length} คน` : '1 คน';
-        const where = isAllClasses ? `ทุกห้อง (${classList.length} ห้อง)` : '1 ห้อง';
+        const where = classList.length > 1 ? `${classList.length} ห้อง` : '1 ห้อง';
         alert(`เพิ่มวิชาพิเศษสำเร็จ สร้างตารางสอนให้${who} ${where}`);
       } else {
         const failedList = failed.map(f => `- ${f.className}${f.reason ? `: ${f.reason}` : ''}`).join('\n');
@@ -603,11 +644,9 @@ const SubjectManagement = ({ onSubjectsUpdate, selectedTeacher, teachers = [], o
     excludeScheduleId: editingScheduleId,
   });
 
-  // เช็ค conflict ของฟอร์มวิชาพิเศษ แบบ real-time — ถ้าเลือก "นักเรียนทั้งหมด" เช็คทุกห้อง
+  // เช็ค conflict ของฟอร์มวิชาพิเศษ แบบ real-time — เลือกกลุ่มระดับชั้น/ห้องได้หลายรายการ
   // แล้วสรุปว่ากี่ห้องว่าง/กี่ห้องชน ก่อนกดบันทึกจริง
-  const specialFormClassList = specialFormData.classId === 'ALL'
-    ? classrooms.map(c => c.id)
-    : (specialFormData.classId ? [parseInt(specialFormData.classId)] : []);
+  const specialFormClassList = resolveSelectedClassIds(specialFormData.classIds, classrooms);
 
   const specialFormConflicts = specialFormData.dayOfWeek && specialFormData.startTime && specialFormData.endTime
     ? specialFormClassList
@@ -703,7 +742,6 @@ const SubjectManagement = ({ onSubjectsUpdate, selectedTeacher, teachers = [], o
                   name="activityName"
                   value={specialFormData.activityName}
                   onChange={handleSpecialInputChange}
-                  placeholder="เช่น ชุมนุมคอมพิวเตอร์"
                   required
                   className={inputCls}
                 />
@@ -783,16 +821,22 @@ const SubjectManagement = ({ onSubjectsUpdate, selectedTeacher, teachers = [], o
 
             <div className="grid grid-cols-2 gap-5 max-sm:grid-cols-1">
               <div className="flex flex-col gap-2">
-                <label className="font-semibold text-gray-500 text-sm">ชั้นเรียน/ห้อง *</label>
+                <label className="font-semibold text-gray-500 text-sm">ชั้นเรียน/ห้อง * (เลือกได้หลายรายการ)</label>
                 <select
-                  name="classId"
-                  value={specialFormData.classId}
-                  onChange={handleSpecialInputChange}
+                  name="classIds"
+                  multiple
+                  value={specialFormData.classIds}
+                  onChange={handleSpecialClassIdsChange}
                   required
-                  className={inputCls}
+                  size={6}
+                  className={`${inputCls} py-1`}
                 >
-                  <option value="">-- เลือกชั้นเรียน --</option>
                   <option value="ALL">นักเรียนทั้งหมด</option>
+                  <option value="JUNIOR">มัธยมต้น (ม.1-3)</option>
+                  <option value="SENIOR">มัธยมปลาย (ม.4-6)</option>
+                  {[1, 2, 3, 4, 5, 6].map((level) => (
+                    <option key={`G${level}`} value={`G${level}`}>ม.{level} (ทุกห้อง)</option>
+                  ))}
                   {classrooms && classrooms.length > 0 ? (
                     classrooms.map((classroom, index) => (
                       <option key={classroom.id || index} value={classroom.id}>
@@ -803,6 +847,9 @@ const SubjectManagement = ({ onSubjectsUpdate, selectedTeacher, teachers = [], o
                     <option disabled>ไม่พบข้อมูลห้องเรียน</option>
                   )}
                 </select>
+                <span className="text-xs text-gray-400">
+                  กด Ctrl/Cmd ค้างเพื่อเลือกหลายรายการ — เลือกแล้ว {specialFormClassList.length} ห้อง
+                </span>
               </div>
               <div className="flex flex-col gap-2">
                 <label className="font-semibold text-gray-500 text-sm">วันที่สอน *</label>
