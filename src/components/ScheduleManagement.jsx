@@ -4,6 +4,7 @@ import { useState } from 'react';
 import SubjectManagement from './SubjectManagement';
 import TeacherSchedule from './TeacherSchedule';
 import ClassSchedule from './ClassSchedule';
+import ClubManagement from './ClubManagement';
 import PeriodGridSettings from './PeriodGridSettings';
 
 const ScheduleManagement = ({ school }) => {
@@ -46,6 +47,12 @@ const ScheduleManagement = ({ school }) => {
           📚 รายวิชา
         </button>
         <button
+          className={`${tabBase} ${activeSubTab === 'clubs' ? tabActive : ''}`}
+          onClick={() => setActiveSubTab('clubs')}
+        >
+          🎭 ชุมนุม
+        </button>
+        <button
           className={`${tabBase} ${activeSubTab === 'grid-settings' ? tabActive : ''}`}
           onClick={() => setActiveSubTab('grid-settings')}
         >
@@ -82,6 +89,9 @@ const ScheduleManagement = ({ school }) => {
             onTeacherChange={setSelectedTeacher}
             classrooms={school?.classrooms || []}
           />
+        </div>
+        <div style={{ display: activeSubTab === 'clubs' ? 'block' : 'none' }}>
+          <ClubManagement teachers={school?.teachers || []} />
         </div>
         <div style={{ display: activeSubTab === 'grid-settings' ? 'block' : 'none' }}>
           <PeriodGridSettings onSave={handlePeriodSave} />

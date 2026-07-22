@@ -25,6 +25,7 @@ export { categoryAPI, behaviorAPI } from './behaviorApi';
 
 // News (ข่าวสารและประกาศ)
 export { newsAPI } from './newsApi';
+export { clubAPI } from './clubApi';
 
 // Emergency (ระบบแจ้งเหตุฉุกเฉิน)
 export { emergencyAPI } from './emergencyApi';
