@@ -12,6 +12,7 @@ const SCHEDULE_API_URL = API_BASE;
 const BEHAVIOR_API_URL = API_BASE;
 const NEWS_API_URL = API_BASE;
 const UPLOAD_API_URL = API_BASE;
+const CLUB_API_URL = API_BASE;
 
 // Service configuration
 export const API_CONFIG = {
@@ -23,6 +24,7 @@ export const API_CONFIG = {
     BEHAVIOR: BEHAVIOR_API_URL,
     NEWS: NEWS_API_URL,
     UPLOAD: UPLOAD_API_URL,
+    CLUB: CLUB_API_URL,
   },
 
   // Service prefixes สำหรับ Kong Gateway
@@ -33,6 +35,7 @@ export const API_CONFIG = {
     BEHAVIOR: 'behavior-service',
     NEWS: 'news-service',
     UPLOAD: 'upload-service',
+    CLUB: 'club-service',
   },
 
   // Default settings
