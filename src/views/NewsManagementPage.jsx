@@ -42,6 +42,7 @@ const EMPTY_FORM = {
   form_schema: [],
   capacity: null,
   allow_cancel: false,
+  target_grade_levels: [],
 };
 
 const NewsManagementPage = () => {
@@ -99,6 +100,7 @@ const NewsManagementPage = () => {
       form_schema: item.form_schema || [],
       capacity: item.capacity ?? null,
       allow_cancel: item.allow_cancel ?? false,
+      target_grade_levels: item.target_grade_levels || [],
     });
     setShowForm(true);
   };
@@ -455,6 +457,40 @@ const NewsManagementPage = () => {
               />
               <span>เผยแพร่</span>
             </label>
+
+            <div className="border-t border-gray-100 pt-4 flex flex-col gap-2">
+              <div className="font-semibold text-sm text-gray-800">กลุ่มเป้าหมาย (นักเรียน)</div>
+              <div className="text-xs text-gray-400">ไม่เลือก = แสดงให้นักเรียนทุกระดับชั้น</div>
+              <div className="flex gap-2">
+                {[
+                  { key: 'junior', label: 'มัธยมต้น (ม.1-3)' },
+                  { key: 'senior', label: 'มัธยมปลาย (ม.4-6)' },
+                ].map((g) => {
+                  const checked = form.target_grade_levels.includes(g.key);
+                  return (
+                    <button
+                      key={g.key}
+                      type="button"
+                      className={`px-3 py-2 rounded-xl text-sm font-semibold border cursor-pointer transition-colors ${
+                        checked
+                          ? 'bg-blue-600 text-white border-blue-600'
+                          : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'
+                      }`}
+                      onClick={() =>
+                        setForm({
+                          ...form,
+                          target_grade_levels: checked
+                            ? form.target_grade_levels.filter((v) => v !== g.key)
+                            : [...form.target_grade_levels, g.key],
+                        })
+                      }
+                    >
+                      {g.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
 
             <div className="border-t border-gray-100 pt-4 flex flex-col gap-3">
               <div className="font-semibold text-sm text-gray-800">การ์ดกดได้</div>
