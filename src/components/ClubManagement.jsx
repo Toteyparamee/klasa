@@ -12,13 +12,25 @@ const GRADE_LEVEL_OPTIONS = [
 
 const gradeLevelLabel = (key) => GRADE_LEVEL_OPTIONS.find((g) => g.key === key)?.label || key;
 
+const DAY_OPTIONS = [
+  { key: 1, label: 'จันทร์' },
+  { key: 2, label: 'อังคาร' },
+  { key: 3, label: 'พุธ' },
+  { key: 4, label: 'พฤหัสบดี' },
+  { key: 5, label: 'ศุกร์' },
+  { key: 6, label: 'เสาร์' },
+  { key: 7, label: 'อาทิตย์' },
+];
+
+const PERIOD_OPTIONS = Array.from({ length: 10 }, (_, i) => i + 1);
+
 const emptyForm = {
   name: '',
   description: '',
   advisor_teacher_code: '',
+  image_url: null,
   capacity: null,
   target_grade_levels: [],
-  is_registration_open: true,
   academic_year: API_CONFIG.DEFAULT_ACADEMIC_YEAR,
 };
 
@@ -32,10 +44,28 @@ const ClubManagement = ({ teachers = [] }) => {
   const [editingId, setEditingId] = useState(null);
   const [form, setForm] = useState(emptyForm);
   const [saving, setSaving] = useState(false);
+  const [uploading, setUploading] = useState(false);
 
   const [membersClub, setMembersClub] = useState(null); // club object ที่กำลังดูสมาชิก
   const [members, setMembers] = useState([]);
   const [membersLoading, setMembersLoading] = useState(false);
+
+  const [scheduleConfig, setScheduleConfig] = useState(null); // { day_of_week, period, registration_start, registration_end, is_registration_open } | null
+  const [scheduleForm, setScheduleForm] = useState({
+    day_of_week: 4,
+    period: 8,
+    registration_start: '',
+    registration_end: '',
+  });
+  const [scheduleSaving, setScheduleSaving] = useState(false);
+
+  // แปลง ISO string (UTC) จาก backend ↔ ค่าที่ <input type="datetime-local"> ต้องการ (local time, ไม่มี timezone)
+  const toDatetimeLocal = (iso) => {
+    if (!iso) return '';
+    const d = new Date(iso);
+    const pad = (n) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  };
 
   const loadClubs = useCallback(async () => {
     setLoading(true);
@@ -51,9 +81,56 @@ const ClubManagement = ({ teachers = [] }) => {
     }
   }, []);
 
+  const loadScheduleConfig = useCallback(async () => {
+    try {
+      const token = getToken();
+      const res = await clubAPI.getScheduleConfig(token);
+      if (res.data) {
+        setScheduleConfig(res.data);
+        setScheduleForm({
+          day_of_week: res.data.day_of_week,
+          period: res.data.period,
+          registration_start: toDatetimeLocal(res.data.registration_start),
+          registration_end: toDatetimeLocal(res.data.registration_end),
+        });
+      }
+    } catch (err) {
+      // ไม่ critical — แค่ยังไม่มีค่าตั้งไว้ก็ปล่อยเป็น default
+    }
+  }, []);
+
   useEffect(() => {
     loadClubs();
-  }, [loadClubs]);
+    loadScheduleConfig();
+  }, [loadClubs, loadScheduleConfig]);
+
+  const handleSaveScheduleConfig = async () => {
+    if (!scheduleForm.registration_start || !scheduleForm.registration_end) {
+      alert('กรุณาระบุเวลาเริ่มและสิ้นสุดการลงทะเบียน');
+      return;
+    }
+    if (new Date(scheduleForm.registration_start) >= new Date(scheduleForm.registration_end)) {
+      alert('เวลาเริ่มต้องมาก่อนเวลาสิ้นสุด');
+      return;
+    }
+    setScheduleSaving(true);
+    try {
+      const token = await getValidToken();
+      const body = {
+        day_of_week: scheduleForm.day_of_week,
+        period: scheduleForm.period,
+        registration_start: new Date(scheduleForm.registration_start).toISOString(),
+        registration_end: new Date(scheduleForm.registration_end).toISOString(),
+      };
+      const res = await clubAPI.updateScheduleConfig(body, token);
+      setScheduleConfig(res.data);
+      await loadClubs();
+    } catch (err) {
+      alert('บันทึกไม่สำเร็จ: ' + err.message);
+    } finally {
+      setScheduleSaving(false);
+    }
+  };
 
   const openAdd = () => {
     setEditingId(null);
@@ -67,12 +144,28 @@ const ClubManagement = ({ teachers = [] }) => {
       name: club.name || '',
       description: club.description || '',
       advisor_teacher_code: club.advisor_teacher_code || '',
+      image_url: club.image_url || null,
       capacity: club.capacity ?? null,
       target_grade_levels: club.target_grade_levels || [],
-      is_registration_open: club.is_registration_open ?? true,
       academic_year: club.academic_year || API_CONFIG.DEFAULT_ACADEMIC_YEAR,
     });
     setShowForm(true);
+  };
+
+  const handleUploadImage = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploading(true);
+    try {
+      const token = await getValidToken();
+      const res = await clubAPI.uploadImage(file, token);
+      setForm((f) => ({ ...f, image_url: res.url }));
+    } catch (err) {
+      alert('อัปโหลดรูปล้มเหลว: ' + err.message);
+    } finally {
+      setUploading(false);
+      e.target.value = '';
+    }
   };
 
   const handleSubmit = async (e) => {
@@ -117,16 +210,6 @@ const ClubManagement = ({ teachers = [] }) => {
     }
   };
 
-  const handleToggleRegistration = async (club) => {
-    try {
-      const token = await getValidToken();
-      await clubAPI.updateClub(club.id, { is_registration_open: !club.is_registration_open }, token);
-      await loadClubs();
-    } catch (err) {
-      alert('อัปเดตล้มเหลว: ' + err.message);
-    }
-  };
-
   const openMembers = async (club) => {
     setMembersClub(club);
     setMembersLoading(true);
@@ -162,7 +245,7 @@ const ClubManagement = ({ teachers = [] }) => {
         <div>
           <h2 className="text-2xl font-bold text-gray-900">ชุมนุม</h2>
           <p className="text-sm text-gray-500 mt-1">
-            ชุมนุมทุกวันพฤหัสบดี คาบ 8 — จัดการรายชื่อชุมนุมและสมาชิกที่นี่
+            จัดการรายชื่อชุมนุมและสมาชิกที่นี่ — ทุกชุมนุมจัดกิจกรรมวัน/คาบเดียวกันตามที่ตั้งไว้ด้านล่าง
           </p>
         </div>
         <div className="flex gap-3">
@@ -178,6 +261,80 @@ const ClubManagement = ({ teachers = [] }) => {
             disabled={loading}
           >
             {loading ? 'กำลังโหลด...' : 'รีเฟรช'}
+          </button>
+        </div>
+      </div>
+
+      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 mb-6 flex flex-col gap-4">
+        <div className="flex items-center justify-between flex-wrap gap-2">
+          <div>
+            <p className="text-sm font-bold text-gray-900 mb-0.5">⚙️ ตั้งค่ากลางของชุมนุม (ทั้งโรงเรียน)</p>
+            <p className="text-xs text-gray-400">
+              ทุกชุมนุมจัดกิจกรรมวัน/คาบเดียวกัน และเปิด-ปิดรับสมัครพร้อมกันตามช่วงเวลานี้อัตโนมัติ
+            </p>
+          </div>
+          {scheduleConfig && (
+            <span
+              className={`px-3 py-1.5 rounded-xl text-xs font-semibold ${
+                scheduleConfig.is_registration_open
+                  ? 'bg-green-50 text-green-700 border border-green-100'
+                  : 'bg-gray-100 text-gray-500 border border-gray-200'
+              }`}
+            >
+              {scheduleConfig.is_registration_open ? '🔓 กำลังเปิดรับสมัคร' : '🔒 ปิดรับสมัครอยู่'}
+            </span>
+          )}
+        </div>
+
+        <div className="flex items-end gap-3 flex-wrap">
+          <label className="flex flex-col gap-1 text-xs text-gray-600">
+            <span>วันจัดกิจกรรม</span>
+            <select
+              className={`${inputCls} py-2`}
+              value={scheduleForm.day_of_week}
+              onChange={(e) => setScheduleForm({ ...scheduleForm, day_of_week: Number(e.target.value) })}
+            >
+              {DAY_OPTIONS.map((d) => (
+                <option key={d.key} value={d.key}>{d.label}</option>
+              ))}
+            </select>
+          </label>
+          <label className="flex flex-col gap-1 text-xs text-gray-600">
+            <span>คาบ</span>
+            <select
+              className={`${inputCls} py-2`}
+              value={scheduleForm.period}
+              onChange={(e) => setScheduleForm({ ...scheduleForm, period: Number(e.target.value) })}
+            >
+              {PERIOD_OPTIONS.map((p) => (
+                <option key={p} value={p}>คาบ {p}</option>
+              ))}
+            </select>
+          </label>
+          <label className="flex flex-col gap-1 text-xs text-gray-600">
+            <span>เริ่มลงทะเบียน</span>
+            <input
+              type="datetime-local"
+              className={`${inputCls} py-2`}
+              value={scheduleForm.registration_start}
+              onChange={(e) => setScheduleForm({ ...scheduleForm, registration_start: e.target.value })}
+            />
+          </label>
+          <label className="flex flex-col gap-1 text-xs text-gray-600">
+            <span>สิ้นสุดลงทะเบียน</span>
+            <input
+              type="datetime-local"
+              className={`${inputCls} py-2`}
+              value={scheduleForm.registration_end}
+              onChange={(e) => setScheduleForm({ ...scheduleForm, registration_end: e.target.value })}
+            />
+          </label>
+          <button
+            className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-sm font-semibold border-none cursor-pointer disabled:opacity-60"
+            onClick={handleSaveScheduleConfig}
+            disabled={scheduleSaving}
+          >
+            {scheduleSaving ? 'กำลังบันทึก...' : 'บันทึก'}
           </button>
         </div>
       </div>
@@ -201,10 +358,14 @@ const ClubManagement = ({ teachers = [] }) => {
           {clubs.map((club) => (
             <div key={club.id} className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden flex flex-col">
               <div
-                className="h-[64px] relative flex items-center justify-center"
-                style={{ background: 'linear-gradient(135deg, #6366F1, #6366F1b3)' }}
+                className="h-[110px] relative flex items-center justify-center bg-cover bg-center"
+                style={{
+                  background: club.image_url
+                    ? `url(${clubAPI.resolveImageUrl(club.image_url)}) center/cover`
+                    : 'linear-gradient(135deg, #6366F1, #6366F1b3)',
+                }}
               >
-                <span className="text-[32px] opacity-85">🎭</span>
+                {!club.image_url && <span className="text-[32px] opacity-85">🎭</span>}
                 <span
                   className={`absolute top-2 right-2 px-2.5 py-1 rounded-xl text-xs font-semibold text-white ${
                     club.is_registration_open ? 'bg-green-500' : 'bg-gray-400'
@@ -238,14 +399,6 @@ const ClubManagement = ({ teachers = [] }) => {
                     title="ดูรายชื่อสมาชิก"
                   >
                     👥 ดูรายชื่อ
-                  </button>
-                  <button
-                    className="bg-transparent border-none w-9 h-9 rounded-full cursor-pointer text-base inline-flex items-center justify-center hover:bg-gray-100 transition-colors"
-                    onClick={() => handleToggleRegistration(club)}
-                    title={club.is_registration_open ? 'ปิดรับสมัคร' : 'เปิดรับสมัคร'}
-                    style={{ color: club.is_registration_open ? '#4CAF50' : '#FF9800' }}
-                  >
-                    {club.is_registration_open ? '🔓' : '🔒'}
                   </button>
                   <button
                     className="bg-transparent border-none w-9 h-9 rounded-full cursor-pointer text-base inline-flex items-center justify-center hover:bg-gray-100 transition-colors"
@@ -308,6 +461,34 @@ const ClubManagement = ({ teachers = [] }) => {
                 />
               </label>
 
+              <div className="flex flex-col gap-1.5">
+                <span className="font-semibold text-gray-800 text-sm">รูปปกชุมนุม</span>
+                {form.image_url ? (
+                  <div className="relative rounded-xl overflow-hidden border border-gray-200">
+                    <img
+                      src={clubAPI.resolveImageUrl(form.image_url)}
+                      alt="preview"
+                      className="w-full h-[140px] object-cover block"
+                    />
+                    <button
+                      type="button"
+                      className="absolute top-2 right-2 px-3 py-1.5 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg text-xs font-semibold border border-red-100 cursor-pointer"
+                      onClick={() => setForm({ ...form, image_url: null })}
+                    >
+                      ลบรูป
+                    </button>
+                  </div>
+                ) : (
+                  <div className="bg-gray-50 border border-dashed border-gray-300 rounded-xl py-8 px-5 text-center text-gray-400 text-sm">
+                    ไม่มีรูปภาพ
+                  </div>
+                )}
+                <label className="inline-block bg-indigo-50 text-indigo-700 px-4 py-2.5 rounded-xl text-center cursor-pointer font-semibold text-sm border border-indigo-100 hover:bg-indigo-100 transition-colors">
+                  {uploading ? 'กำลังอัปโหลด...' : form.image_url ? 'เปลี่ยนรูปภาพ' : 'เลือกรูปภาพ'}
+                  <input type="file" accept="image/*" onChange={handleUploadImage} disabled={uploading} hidden />
+                </label>
+              </div>
+
               <label className="flex flex-col gap-1.5 text-sm text-gray-700">
                 <span className="font-semibold text-gray-800">ครูที่ปรึกษา</span>
                 <select
@@ -323,6 +504,12 @@ const ClubManagement = ({ teachers = [] }) => {
                   ))}
                 </select>
               </label>
+
+              {form.advisor_teacher_code && (
+                <p className="text-xs text-gray-400">
+                  ระบบจะเช็คให้อัตโนมัติว่าครูที่ปรึกษาว่างในคาบกิจกรรมชุมนุมกลางหรือไม่ตอนบันทึก
+                </p>
+              )}
 
               <label className="flex flex-col gap-1.5 text-sm text-gray-700">
                 <span className="font-semibold text-gray-800">จำนวนที่รับ</span>
@@ -388,16 +575,6 @@ const ClubManagement = ({ teachers = [] }) => {
                   onChange={(e) => setForm({ ...form, academic_year: e.target.value })}
                   placeholder="เช่น 2568"
                 />
-              </label>
-
-              <label className="inline-flex flex-row items-center gap-1.5 text-sm font-medium text-gray-600 cursor-pointer">
-                <input
-                  type="checkbox"
-                  className="w-4 h-4 cursor-pointer"
-                  checked={form.is_registration_open}
-                  onChange={(e) => setForm({ ...form, is_registration_open: e.target.checked })}
-                />
-                <span>เปิดรับสมัคร</span>
               </label>
 
               <div className="flex justify-end gap-2.5 mt-2">
