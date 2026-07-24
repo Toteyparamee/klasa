@@ -1,10 +1,11 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { scheduleAPI, subjectAPI, getToken, API_CONFIG } from '../api';
+import { scheduleAPI, subjectAPI, clubAPI, getToken, API_CONFIG } from '../api';
 import { getCurrentSemester } from '../api/settingsApi';
 import { loadPeriodConfig } from './PeriodGridSettings';
 import { periodGridAPI } from '../api/scheduleApi';
+import { injectClubBlock } from '../utils/clubScheduleBlock';
 import { useSchoolId } from '../hooks/useSchoolId';
 import { buildURL } from '../api/config';
 import { uploadAPI } from '../api/uploadApi';
@@ -74,6 +75,7 @@ const TeacherSchedule = ({ teachers = [], selectedTeacher, onTeacherChange, peri
   const [allTeacherSchedules, setAllTeacherSchedules] = useState([]);
   const [loading, setLoading] = useState(false);
   const [periodSlots, setPeriodSlots] = useState(loadPeriodConfig());
+  const [clubConfig, setClubConfig] = useState(null); // { day_of_week, period } — วัน/คาบชุมนุมกลาง
   const [pdfLoading, setPdfLoading] = useState(false);
   const [semesterInfo, setSemesterInfo] = useState(null);
   const [logoBase64, setLogoBase64] = useState(null);
@@ -132,6 +134,19 @@ const TeacherSchedule = ({ teachers = [], selectedTeacher, onTeacherChange, peri
     };
     fetchPeriodConfig();
   }, [periodConfigVersion]);
+
+  useEffect(() => {
+    const fetchClubConfig = async () => {
+      try {
+        const token = getToken();
+        const res = await clubAPI.getScheduleConfig(token);
+        setClubConfig(res.data || null);
+      } catch (e) {
+        // ไม่ critical — ถ้าโหลดไม่ได้ก็แค่ไม่แสดง block ชุมนุม
+      }
+    };
+    fetchClubConfig();
+  }, []);
 
   const getDayName = (dayOfWeek) => {
     const dayMap = {
@@ -323,6 +338,7 @@ const TeacherSchedule = ({ teachers = [], selectedTeacher, onTeacherChange, peri
   };
 
   const grid = convertToGridFormat(schedules);
+  injectClubBlock(grid, periodSlots, clubConfig);
   const classColors = getClassColors(grid);
 
   const describeConflict = (conflict) => {
@@ -479,6 +495,20 @@ const TeacherSchedule = ({ teachers = [], selectedTeacher, onTeacherChange, peri
 
                 const daySchedule = gridData[day] || {};
                 const slotData = findScheduleForSlot(daySchedule, slot);
+
+                if (slotData?.isClub) {
+                  return (
+                    <td key={`${day}-${slot.label}`} className="border border-slate-100 min-w-[120px] align-top">
+                      <div
+                        className="m-1 p-2 rounded-lg flex flex-col items-center justify-center gap-1 min-h-[60px]"
+                        style={{ background: 'linear-gradient(135deg, #6366F130, #8B5CF618)', borderLeft: '4px solid #6366F1' }}
+                      >
+                        <div className="text-lg leading-none">🎭</div>
+                        <div className="text-[0.8125rem] font-bold" style={{ color: '#6366F1' }}>ชุมนุม</div>
+                      </div>
+                    </td>
+                  );
+                }
 
                 if (slotData) {
                   const color = colors[slotData.className] || '#6366F1';
@@ -760,6 +790,15 @@ const TeacherSchedule = ({ teachers = [], selectedTeacher, onTeacherChange, peri
                         }
                         const daySchedule = grid[day] || {};
                         const slotData = findScheduleForSlot(daySchedule, slot);
+                        if (slotData?.isClub) {
+                          return (
+                            <td key={`${day}-${slot.label}`} style={{ border: '1px solid #e2e8f0', padding: '3px', verticalAlign: 'top' }}>
+                              <div style={{ padding: '4px 6px', borderRadius: '4px', borderLeft: '3px solid #6366F1', backgroundColor: '#6366F118', minHeight: '42px', textAlign: 'center' }}>
+                                <div style={{ fontSize: '11px', fontWeight: 'bold', color: '#6366F1' }}>🎭 ชุมนุม</div>
+                              </div>
+                            </td>
+                          );
+                        }
                         if (slotData) {
                           const color = classColors[slotData.className] || '#6366F1';
                           return (

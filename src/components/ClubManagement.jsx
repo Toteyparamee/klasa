@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { clubAPI, getToken, API_CONFIG } from '../api';
+import { clubAPI, studentAPI, getToken, API_CONFIG } from '../api';
 import { useAuth } from '../context/AuthContext';
 import { useSchoolId } from '../hooks/useSchoolId';
 
@@ -50,6 +50,15 @@ const ClubManagement = ({ teachers = [] }) => {
   const [members, setMembers] = useState([]);
   const [membersLoading, setMembersLoading] = useState(false);
 
+  // Picker เพิ่มนักเรียน (แมนนวล)
+  const [showPicker, setShowPicker] = useState(false);
+  const [allStudents, setAllStudents] = useState([]); // นักเรียนทั้งโรงเรียน
+  const [studentsLoading, setStudentsLoading] = useState(false);
+  const [pickerRoom, setPickerRoom] = useState(''); // "grade/section" ที่เลือกกรอง
+  const [pickerSearch, setPickerSearch] = useState('');
+  const [pickerSelected, setPickerSelected] = useState([]); // student_code ที่เลือก
+  const [addingMembers, setAddingMembers] = useState(false);
+
   const [scheduleConfig, setScheduleConfig] = useState(null); // { day_of_week, period, registration_start, registration_end, is_registration_open } | null
   const [scheduleForm, setScheduleForm] = useState({
     day_of_week: 4,
@@ -57,6 +66,7 @@ const ClubManagement = ({ teachers = [] }) => {
     registration_start: '',
     registration_end: '',
   });
+  const [regEnabled, setRegEnabled] = useState(false); // เปิดใช้ช่วงเวลาลงทะเบียนหรือไม่
   const [scheduleSaving, setScheduleSaving] = useState(false);
 
   // แปลง ISO string (UTC) จาก backend ↔ ค่าที่ <input type="datetime-local"> ต้องการ (local time, ไม่มี timezone)
@@ -93,6 +103,8 @@ const ClubManagement = ({ teachers = [] }) => {
           registration_start: toDatetimeLocal(res.data.registration_start),
           registration_end: toDatetimeLocal(res.data.registration_end),
         });
+        // เปิด switch ถ้ามีช่วงเวลาลงทะเบียนตั้งไว้แล้ว
+        setRegEnabled(!!(res.data.registration_start && res.data.registration_end));
       }
     } catch (err) {
       // ไม่ critical — แค่ยังไม่มีค่าตั้งไว้ก็ปล่อยเป็น default
@@ -105,13 +117,15 @@ const ClubManagement = ({ teachers = [] }) => {
   }, [loadClubs, loadScheduleConfig]);
 
   const handleSaveScheduleConfig = async () => {
-    if (!scheduleForm.registration_start || !scheduleForm.registration_end) {
-      alert('กรุณาระบุเวลาเริ่มและสิ้นสุดการลงทะเบียน');
-      return;
-    }
-    if (new Date(scheduleForm.registration_start) >= new Date(scheduleForm.registration_end)) {
-      alert('เวลาเริ่มต้องมาก่อนเวลาสิ้นสุด');
-      return;
+    if (regEnabled) {
+      if (!scheduleForm.registration_start || !scheduleForm.registration_end) {
+        alert('กรุณาระบุเวลาเริ่มและสิ้นสุดการลงทะเบียน');
+        return;
+      }
+      if (new Date(scheduleForm.registration_start) >= new Date(scheduleForm.registration_end)) {
+        alert('เวลาเริ่มต้องมาก่อนเวลาสิ้นสุด');
+        return;
+      }
     }
     setScheduleSaving(true);
     try {
@@ -119,8 +133,9 @@ const ClubManagement = ({ teachers = [] }) => {
       const body = {
         day_of_week: scheduleForm.day_of_week,
         period: scheduleForm.period,
-        registration_start: new Date(scheduleForm.registration_start).toISOString(),
-        registration_end: new Date(scheduleForm.registration_end).toISOString(),
+        // ปิด switch = ส่ง null = ปิดรับสมัครทั้งหมด (backend fail-closed เมื่อไม่มีช่วงเวลา)
+        registration_start: regEnabled ? new Date(scheduleForm.registration_start).toISOString() : null,
+        registration_end: regEnabled ? new Date(scheduleForm.registration_end).toISOString() : null,
       };
       const res = await clubAPI.updateScheduleConfig(body, token);
       setScheduleConfig(res.data);
@@ -210,12 +225,11 @@ const ClubManagement = ({ teachers = [] }) => {
     }
   };
 
-  const openMembers = async (club) => {
-    setMembersClub(club);
+  const loadMembers = async (clubId) => {
     setMembersLoading(true);
     try {
       const token = await getValidToken();
-      const res = await clubAPI.getClubMembers(club.id, token);
+      const res = await clubAPI.getClubMembers(clubId, token);
       setMembers(res.data || []);
     } catch (err) {
       alert('โหลดรายชื่อสมาชิกล้มเหลว: ' + err.message);
@@ -225,9 +239,99 @@ const ClubManagement = ({ teachers = [] }) => {
     }
   };
 
+  const openMembers = async (club) => {
+    setMembersClub(club);
+    await loadMembers(club.id);
+  };
+
   const closeMembers = () => {
     setMembersClub(null);
     setMembers([]);
+  };
+
+  // ===== Picker เพิ่มนักเรียน =====
+  const openPicker = async () => {
+    setShowPicker(true);
+    setPickerRoom('');
+    setPickerSearch('');
+    setPickerSelected([]);
+    if (allStudents.length === 0) {
+      setStudentsLoading(true);
+      try {
+        const token = await getValidToken();
+        const res = await studentAPI.getStudentsAll(token, 2000);
+        setAllStudents(res.data || []);
+      } catch (err) {
+        alert('โหลดรายชื่อนักเรียนล้มเหลว: ' + err.message);
+      } finally {
+        setStudentsLoading(false);
+      }
+    }
+  };
+
+  const handleAddMembers = async () => {
+    if (pickerSelected.length === 0) return;
+    setAddingMembers(true);
+    try {
+      const token = await getValidToken();
+      const res = await clubAPI.addMembers(membersClub.id, pickerSelected, token);
+      const failed = res.data?.failed || [];
+      if (failed.length > 0) {
+        const names = failed
+          .map((f) => `${studentName(f.student_code)}: ${f.message}`)
+          .join('\n');
+        alert(`เพิ่มบางคนไม่สำเร็จ:\n${names}`);
+      }
+      setShowPicker(false);
+      await loadMembers(membersClub.id);
+      await loadClubs(); // อัปเดต member_count ในการ์ด
+    } catch (err) {
+      alert('เพิ่มนักเรียนล้มเหลว: ' + err.message);
+    } finally {
+      setAddingMembers(false);
+    }
+  };
+
+  const handleRemoveMember = async (studentCode) => {
+    if (!window.confirm('ลบนักเรียนคนนี้ออกจากชุมนุมใช่หรือไม่?')) return;
+    try {
+      const token = await getValidToken();
+      await clubAPI.removeMember(membersClub.id, studentCode, token);
+      await loadMembers(membersClub.id);
+      await loadClubs();
+    } catch (err) {
+      alert('ลบสมาชิกล้มเหลว: ' + err.message);
+    }
+  };
+
+  const studentName = (code) => {
+    const s = allStudents.find((st) => st.student_code === code);
+    return s ? `${s.title_th || ''}${s.first_name_th} ${s.last_name_th}` : code;
+  };
+
+  // ห้องทั้งหมด (grade/section) จากรายชื่อนักเรียน — เรียงตามชั้น/ห้อง
+  const roomOptions = Array.from(
+    new Set(allStudents.map((s) => `${s.grade}/${s.section}`).filter((r) => r !== '/')),
+  ).sort((a, b) => a.localeCompare(b, 'th', { numeric: true }));
+
+  // student_code ที่เป็นสมาชิก active อยู่แล้ว — กันเลือกซ้ำ
+  const existingMemberCodes = new Set(members.map((m) => m.student_code));
+
+  const filteredStudents = allStudents.filter((s) => {
+    if (existingMemberCodes.has(s.student_code)) return false;
+    if (pickerRoom && `${s.grade}/${s.section}` !== pickerRoom) return false;
+    if (pickerSearch) {
+      const q = pickerSearch.toLowerCase();
+      const full = `${s.first_name_th} ${s.last_name_th} ${s.student_code}`.toLowerCase();
+      if (!full.includes(q)) return false;
+    }
+    return true;
+  });
+
+  const togglePickerStudent = (code) => {
+    setPickerSelected((prev) =>
+      prev.includes(code) ? prev.filter((c) => c !== code) : [...prev, code],
+    );
   };
 
   const getTeacherName = (teacherCode) => {
@@ -311,24 +415,47 @@ const ClubManagement = ({ teachers = [] }) => {
               ))}
             </select>
           </label>
+          {/* สวิตช์เปิดใช้ช่วงเวลาลงทะเบียน */}
           <label className="flex flex-col gap-1 text-xs text-gray-600">
-            <span>เริ่มลงทะเบียน</span>
-            <input
-              type="datetime-local"
-              className={`${inputCls} py-2`}
-              value={scheduleForm.registration_start}
-              onChange={(e) => setScheduleForm({ ...scheduleForm, registration_start: e.target.value })}
-            />
+            <span>เปิดรับสมัคร</span>
+            <button
+              type="button"
+              onClick={() => setRegEnabled((v) => !v)}
+              className={`relative w-[52px] h-[28px] rounded-full transition-colors border-none cursor-pointer ${
+                regEnabled ? 'bg-indigo-600' : 'bg-gray-300'
+              }`}
+              aria-pressed={regEnabled}
+            >
+              <span
+                className={`absolute top-[3px] left-[3px] w-[22px] h-[22px] bg-white rounded-full shadow transition-transform ${
+                  regEnabled ? 'translate-x-[24px]' : ''
+                }`}
+              />
+            </button>
           </label>
-          <label className="flex flex-col gap-1 text-xs text-gray-600">
-            <span>สิ้นสุดลงทะเบียน</span>
-            <input
-              type="datetime-local"
-              className={`${inputCls} py-2`}
-              value={scheduleForm.registration_end}
-              onChange={(e) => setScheduleForm({ ...scheduleForm, registration_end: e.target.value })}
-            />
-          </label>
+
+          {regEnabled && (
+            <>
+              <label className="flex flex-col gap-1 text-xs text-gray-600">
+                <span>เริ่มลงทะเบียน</span>
+                <input
+                  type="datetime-local"
+                  className={`${inputCls} py-2`}
+                  value={scheduleForm.registration_start}
+                  onChange={(e) => setScheduleForm({ ...scheduleForm, registration_start: e.target.value })}
+                />
+              </label>
+              <label className="flex flex-col gap-1 text-xs text-gray-600">
+                <span>สิ้นสุดลงทะเบียน</span>
+                <input
+                  type="datetime-local"
+                  className={`${inputCls} py-2`}
+                  value={scheduleForm.registration_end}
+                  onChange={(e) => setScheduleForm({ ...scheduleForm, registration_end: e.target.value })}
+                />
+              </label>
+            </>
+          )}
           <button
             className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-sm font-semibold border-none cursor-pointer disabled:opacity-60"
             onClick={handleSaveScheduleConfig}
@@ -337,6 +464,11 @@ const ClubManagement = ({ teachers = [] }) => {
             {scheduleSaving ? 'กำลังบันทึก...' : 'บันทึก'}
           </button>
         </div>
+        {!regEnabled && (
+          <p className="text-xs text-gray-400 mt-1">
+            ปิดรับสมัครทั้งหมด — เปิดสวิตช์แล้วตั้งช่วงเวลาเพื่อให้นักเรียนสมัครได้
+          </p>
+        )}
       </div>
 
       {error && (
@@ -614,20 +746,29 @@ const ClubManagement = ({ teachers = [] }) => {
                   {membersClub.capacity ? ` / รับ ${membersClub.capacity} คน` : ' (ไม่จำกัด)'}
                 </p>
               </div>
-              <button
-                type="button"
-                onClick={closeMembers}
-                className="text-gray-400 hover:text-gray-600 text-xl leading-none bg-transparent border-none cursor-pointer"
-              >
-                ×
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={openPicker}
+                  className="px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-sm font-semibold border-none cursor-pointer"
+                >
+                  + เพิ่มนักเรียน
+                </button>
+                <button
+                  type="button"
+                  onClick={closeMembers}
+                  className="text-gray-400 hover:text-gray-600 text-xl leading-none bg-transparent border-none cursor-pointer"
+                >
+                  ×
+                </button>
+              </div>
             </div>
 
             <div className="p-6">
               {membersLoading ? (
                 <div className="text-center py-10 text-gray-400 text-sm">กำลังโหลด...</div>
               ) : members.length === 0 ? (
-                <div className="text-center py-10 text-gray-400 text-sm">ยังไม่มีสมาชิก</div>
+                <div className="text-center py-10 text-gray-400 text-sm">ยังไม่มีสมาชิก — กด "เพิ่มนักเรียน" เพื่อเพิ่มเอง</div>
               ) : (
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm border-collapse">
@@ -637,12 +778,15 @@ const ClubManagement = ({ teachers = [] }) => {
                         <th className="p-3 font-semibold">รหัสนักเรียน</th>
                         <th className="p-3 font-semibold">ชั้น/ห้อง</th>
                         <th className="p-3 font-semibold">วันที่เข้าร่วม</th>
+                        <th className="p-3 font-semibold text-right">จัดการ</th>
                       </tr>
                     </thead>
                     <tbody>
                       {members.map((m) => (
                         <tr key={m.id} className="border-b border-gray-50 last:border-none">
-                          <td className="p-3 text-gray-800">{m.student_name || '-'}</td>
+                          <td className="p-3 text-gray-800">
+                            {m.student_name || (allStudents.length > 0 ? studentName(m.student_code) : m.student_code)}
+                          </td>
                           <td className="p-3 text-gray-500">{m.student_code}</td>
                           <td className="p-3 text-gray-500">
                             {m.grade ? `${m.grade}/${m.section}` : '-'}
@@ -650,12 +794,121 @@ const ClubManagement = ({ teachers = [] }) => {
                           <td className="p-3 text-gray-500">
                             {m.joined_at ? new Date(m.joined_at).toLocaleDateString('th-TH') : '-'}
                           </td>
+                          <td className="p-3 text-right">
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveMember(m.student_code)}
+                              className="text-red-500 hover:bg-red-50 rounded-lg px-2 py-1 text-xs font-semibold border-none bg-transparent cursor-pointer"
+                            >
+                              ลบออก
+                            </button>
+                          </td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
                 </div>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal เลือกนักเรียนเพิ่มเข้าชุมนุม */}
+      {showPicker && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-[60] p-4" onClick={() => !addingMembers && setShowPicker(false)}>
+          <div
+            className="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[85vh] flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+              <h3 className="text-lg font-bold text-gray-900">เพิ่มนักเรียนเข้าชุมนุม</h3>
+              <button
+                type="button"
+                onClick={() => setShowPicker(false)}
+                className="text-gray-400 hover:text-gray-600 text-xl leading-none bg-transparent border-none cursor-pointer"
+              >
+                ×
+              </button>
+            </div>
+
+            <div className="px-6 py-4 border-b border-gray-100 flex gap-2">
+              <select
+                className={`${inputCls} py-2 flex-1`}
+                value={pickerRoom}
+                onChange={(e) => setPickerRoom(e.target.value)}
+              >
+                <option value="">ทุกห้อง</option>
+                {roomOptions.map((r) => (
+                  <option key={r} value={r}>{r}</option>
+                ))}
+              </select>
+              <input
+                type="text"
+                className={`${inputCls} py-2 flex-1`}
+                placeholder="ค้นหาชื่อ/รหัส"
+                value={pickerSearch}
+                onChange={(e) => setPickerSearch(e.target.value)}
+              />
+            </div>
+
+            <div className="flex-1 overflow-y-auto px-6 py-3">
+              {studentsLoading ? (
+                <div className="text-center py-10 text-gray-400 text-sm">กำลังโหลดรายชื่อนักเรียน...</div>
+              ) : filteredStudents.length === 0 ? (
+                <div className="text-center py-10 text-gray-400 text-sm">ไม่พบนักเรียน (หรือเป็นสมาชิกครบแล้ว)</div>
+              ) : (
+                <div className="flex flex-col gap-1">
+                  {filteredStudents.map((s) => {
+                    const checked = pickerSelected.includes(s.student_code);
+                    return (
+                      <label
+                        key={s.student_code}
+                        className={`flex items-center gap-3 px-3 py-2 rounded-xl cursor-pointer transition-colors ${
+                          checked ? 'bg-indigo-50' : 'hover:bg-gray-50'
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          className="w-4 h-4 cursor-pointer"
+                          checked={checked}
+                          onChange={() => togglePickerStudent(s.student_code)}
+                        />
+                        <div className="flex-1 min-w-0">
+                          <div className="text-sm text-gray-800 truncate">
+                            {s.title_th || ''}{s.first_name_th} {s.last_name_th}
+                          </div>
+                          <div className="text-xs text-gray-400">
+                            {s.student_code} · {s.grade}/{s.section}
+                          </div>
+                        </div>
+                      </label>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            <div className="flex items-center justify-between px-6 py-4 border-t border-gray-100">
+              <span className="text-sm text-gray-500">เลือกแล้ว {pickerSelected.length} คน</span>
+              <div className="flex gap-2.5">
+                <button
+                  type="button"
+                  className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl text-sm font-semibold border-none cursor-pointer disabled:opacity-60"
+                  onClick={() => setShowPicker(false)}
+                  disabled={addingMembers}
+                >
+                  ยกเลิก
+                </button>
+                <button
+                  type="button"
+                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-sm font-semibold border-none cursor-pointer disabled:opacity-60"
+                  onClick={handleAddMembers}
+                  disabled={addingMembers || pickerSelected.length === 0}
+                >
+                  {addingMembers ? 'กำลังเพิ่ม...' : `เพิ่ม ${pickerSelected.length} คน`}
+                </button>
+              </div>
             </div>
           </div>
         </div>

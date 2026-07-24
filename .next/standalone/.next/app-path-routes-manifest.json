@@ -1,15 +1,15 @@
 {
   "/_not-found/page": "/_not-found",
-  "/emergency/page": "/emergency",
-  "/news/[newsId]/registrations/page": "/news/[newsId]/registrations",
-  "/reset-password/page": "/reset-password",
-  "/page": "/",
-  "/school/[schoolId]/page": "/school/[schoolId]",
-  "/personnel/page": "/personnel",
-  "/behavior/page": "/behavior",
-  "/news/page": "/news",
   "/academic-report/page": "/academic-report",
+  "/emergency/page": "/emergency",
+  "/news/page": "/news",
+  "/personnel/page": "/personnel",
+  "/page": "/",
+  "/news/[newsId]/registrations/page": "/news/[newsId]/registrations",
+  "/behavior/page": "/behavior",
+  "/school/[schoolId]/page": "/school/[schoolId]",
+  "/reset-password/page": "/reset-password",
   "/settings/page": "/settings",
-  "/dashboard/page": "/dashboard",
-  "/users/page": "/users"
+  "/users/page": "/users",
+  "/dashboard/page": "/dashboard"
 }

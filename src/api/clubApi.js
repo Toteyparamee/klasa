@@ -35,6 +35,18 @@ export const clubAPI = {
     return apiRequest(url, { token });
   },
 
+  // เพิ่มนักเรียนเข้าชุมนุม (แมนนวลโดยแอดมิน) — ส่งได้ทีละหลายคน
+  async addMembers(id, studentCodes, token) {
+    const url = buildURL('CLUB', `/api/club/${id}/members`);
+    return apiRequest(url, { method: 'POST', body: { student_codes: studentCodes }, token });
+  },
+
+  // ลบนักเรียนออกจากชุมนุม
+  async removeMember(id, studentCode, token) {
+    const url = buildURL('CLUB', `/api/club/${id}/members/${studentCode}`);
+    return apiRequest(url, { method: 'DELETE', token });
+  },
+
   async getScheduleConfig(token) {
     const url = buildURL('CLUB', '/api/club/schedule-config');
     return apiRequest(url, { token });

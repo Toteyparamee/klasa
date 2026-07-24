@@ -1,10 +1,11 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { scheduleAPI, subjectAPI, getToken, API_CONFIG } from '../api';
+import { scheduleAPI, subjectAPI, clubAPI, getToken, API_CONFIG } from '../api';
 import { getCurrentSemester } from '../api/settingsApi';
 import { loadPeriodConfig } from './PeriodGridSettings';
 import { periodGridAPI } from '../api/scheduleApi';
+import { injectClubBlock } from '../utils/clubScheduleBlock';
 import { useSchoolId } from '../hooks/useSchoolId';
 import { useAuth } from '../context/AuthContext';
 import { useScheduleConflict } from '../hooks/useScheduleConflict';
@@ -71,6 +72,7 @@ const ClassSchedule = ({ classrooms = [], teachers = [], selectedClassId, onClas
   const [allClassSchedules, setAllClassSchedules] = useState([]);
   const [loading, setLoading] = useState(false);
   const [periodSlots, setPeriodSlots] = useState(loadPeriodConfig());
+  const [clubConfig, setClubConfig] = useState(null); // { day_of_week, period } — วัน/คาบชุมนุมกลาง
   const [detailItem, setDetailItem] = useState(null); // raw schedule item ที่กำลังดู/แก้ไข
   const [isEditingDetail, setIsEditingDetail] = useState(false);
   const [detailFormData, setDetailFormData] = useState(null);
@@ -103,6 +105,19 @@ const ClassSchedule = ({ classrooms = [], teachers = [], selectedClassId, onClas
     };
     fetchPeriodConfig();
   }, [periodConfigVersion, schoolId]);
+
+  useEffect(() => {
+    const fetchClubConfig = async () => {
+      try {
+        const token = getToken();
+        const res = await clubAPI.getScheduleConfig(token);
+        setClubConfig(res.data || null);
+      } catch (e) {
+        // ไม่ critical — ถ้าโหลดไม่ได้ก็แค่ไม่แสดง block ชุมนุม
+      }
+    };
+    fetchClubConfig();
+  }, []);
 
   const getDayName = (dayOfWeek) => {
     const dayMap = {
@@ -279,6 +294,7 @@ const ClassSchedule = ({ classrooms = [], teachers = [], selectedClassId, onClas
   };
 
   const grid = convertToGridFormat(schedules);
+  injectClubBlock(grid, periodSlots, clubConfig);
   const subjectColors = getSubjectColors(grid);
 
   const describeConflict = (conflict) => {
@@ -350,6 +366,20 @@ const ClassSchedule = ({ classrooms = [], teachers = [], selectedClassId, onClas
 
                 const daySchedule = gridData[day] || {};
                 const slotData = findScheduleForSlot(daySchedule, slot);
+
+                if (slotData?.isClub) {
+                  return (
+                    <td key={`${day}-${slot.label}`} className="border border-slate-100 min-w-[120px] align-top">
+                      <div
+                        className="m-1 p-2 rounded-lg flex flex-col items-center justify-center gap-1 min-h-[60px]"
+                        style={{ background: 'linear-gradient(135deg, #6366F130, #8B5CF618)', borderLeft: '4px solid #6366F1' }}
+                      >
+                        <div className="text-lg leading-none">🎭</div>
+                        <div className="text-[0.8125rem] font-bold" style={{ color: '#6366F1' }}>ชุมนุม</div>
+                      </div>
+                    </td>
+                  );
+                }
 
                 if (slotData) {
                   const color = colors[slotData.subject] || '#6366F1';
@@ -543,6 +573,7 @@ const ClassSchedule = ({ classrooms = [], teachers = [], selectedClassId, onClas
           <div className="flex flex-col gap-8">
             {allClassSchedules.map(({ classroom, schedules: classSchedules }) => {
               const classGrid = convertToGridFormat(classSchedules);
+              injectClubBlock(classGrid, periodSlots, clubConfig);
               const classColors = getSubjectColors(classGrid);
               return (
                 <div key={classroom.id} className="pb-8 border-b border-slate-200 last:border-b-0">
