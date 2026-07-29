@@ -4,6 +4,7 @@ import { Component, useState, useRef, useEffect } from 'react';
 import Sidebar from '../components/Sidebar';
 import SemesterSettings from '../components/SemesterSettings';
 import AppVersionSettings from '../components/AppVersionSettings';
+import SchoolDomainSettings from '../components/SchoolDomainSettings';
 import { useAuth } from '../context/AuthContext';
 import { uploadAPI } from '../api/uploadApi';
 import { getToken } from '../api/config';
@@ -144,6 +145,14 @@ const SystemSettingsPage = () => {
               <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
                 <SectionErrorBoundary>
                   <AppVersionSettings />
+                </SectionErrorBoundary>
+              </div>
+            )}
+
+            {user?.role === 'admin' && (
+              <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+                <SectionErrorBoundary>
+                  <SchoolDomainSettings />
                 </SectionErrorBoundary>
               </div>
             )}

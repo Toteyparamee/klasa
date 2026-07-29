@@ -33,5 +33,8 @@ export { emergencyAPI } from './emergencyApi';
 // App Version (จัดการเวอร์ชันแอป)
 export { versionAPI } from './versionApi';
 
+// School Domains (GAFE Google Sign-In domain mapping)
+export { schoolDomainAPI } from './schoolDomainApi';
+
 // Upload (อัปโหลดไฟล์/รูปภาพ)
 export { uploadAPI } from './uploadApi';
