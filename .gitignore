@@ -12,6 +12,10 @@ dist
 dist-ssr
 *.local
 
+# Next.js build output — ไม่ควร commit เลย gen ใหม่ทุกครั้งตอน build
+.next
+out
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
