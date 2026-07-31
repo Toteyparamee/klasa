@@ -32,14 +32,15 @@ const Sidebar = () => {
   };
 
   const menuItems = [
-    { path: '/dashboard',       icon: '🏠', label: 'หน้าหลัก',         roles: ['admin', 'editor', 'viewer'] },
+    { path: '/dashboard',       icon: '🏠', label: 'หน้าหลัก',         roles: ['admin', 'editor', 'viewer', 'executive'] },
     { path: '/personnel',       icon: '👥', label: 'จัดการบุคลากร',     roles: ['admin', 'editor'] },
     { path: '/users',           icon: '👤', label: 'จัดการผู้ใช้',       roles: ['admin'] },
     { path: '/news',            icon: '📰', label: 'จัดการข่าวสาร',     roles: ['admin', 'editor'] },
     { path: '/behavior',        icon: '⭐', label: 'คะแนนพฤติกรรม',     roles: ['admin', 'editor'] },
     { path: '/settings',        icon: '⚙️', label: 'ตั้งค่าระบบ',        roles: ['admin', 'editor'] },
     { path: '/emergency',       icon: '🚨', label: 'แจ้งเหตุฉุกเฉิน',   roles: ['admin', 'editor'] },
-    { path: '/academic-report', icon: '📊', label: 'รายงานวิชาการ',     roles: ['admin', 'editor', 'viewer'] },
+    { path: '/academic-report', icon: '📊', label: 'รายงานวิชาการ',     roles: ['admin', 'editor', 'viewer', 'executive'] },
+    { path: '/executive',       icon: '🧭', label: 'ภาพรวมนักเรียนที่เสี่ยง', roles: ['admin', 'executive'] },
   ];
 
   const isActive = (path) => pathname === path;
@@ -72,7 +73,10 @@ const Sidebar = () => {
           <div className="flex-1 min-w-0">
             <div className="text-sm font-semibold text-gray-800 truncate">{user?.username}</div>
             <div className="text-xs text-blue-500 font-medium">
-              {user?.role === 'admin' ? 'ผู้ดูแลระบบ' : user?.role === 'editor' ? 'ผู้แก้ไข' : 'ผู้ดู'}
+              {user?.role === 'admin' ? 'ผู้ดูแลระบบ'
+                : user?.role === 'editor' ? 'ผู้แก้ไข'
+                : user?.role === 'executive' ? 'ผู้บริหาร'
+                : 'ผู้ดู'}
             </div>
           </div>
         </div>

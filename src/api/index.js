@@ -36,5 +36,8 @@ export { versionAPI } from './versionApi';
 // School Domains (GAFE Google Sign-In domain mapping)
 export { schoolDomainAPI } from './schoolDomainApi';
 
+// Attendance (สำหรับหน้าผู้บริหาร)
+export { attendanceAPI } from './attendanceApi';
+
 // Upload (อัปโหลดไฟล์/รูปภาพ)
 export { uploadAPI } from './uploadApi';
