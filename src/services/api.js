@@ -35,10 +35,11 @@ export const authAPI = {
     return data;
   },
 
-  // Login ด้วย Google Workspace for Education (GAFE) — ดู GAFE_LOGIN_DESIGN.md
-  // เฉพาะ user ที่มีอยู่ในระบบแล้วเท่านั้น (ไม่รองรับ self-onboard เหมือน mobile)
+  // Login ด้วย Google — ใช้ endpoint /staff เฉพาะ web control เท่านั้น
+  // (ไม่ล็อกโดเมนอีเมลเหมือน mobile เพราะ admin/staff มาจากหลายโรงเรียน
+  // ต่างโดเมนกัน — เช็คแค่ว่ามี user อยู่ในระบบแล้วเท่านั้น ไม่มี self-onboard)
   async googleLogin(idToken) {
-    const response = await fetch(buildURL('LOGIN', '/server/auth/google'), {
+    const response = await fetch(buildURL('LOGIN', '/server/auth/google/staff'), {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
