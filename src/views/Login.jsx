@@ -3,13 +3,14 @@
 import { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useRouter } from 'next/navigation';
+import GoogleSignInButton from '../components/GoogleSignInButton';
 
 const Login = () => {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
-  const { login, loading } = useAuth();
+  const { login, loginWithGoogleIdToken, loading } = useAuth();
   const router = useRouter();
 
   const handleSubmit = async (e) => {
@@ -20,6 +21,16 @@ const Login = () => {
       router.push('/dashboard');
     } else {
       setError(result.message || 'ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง');
+    }
+  };
+
+  const handleGoogleToken = async (idToken) => {
+    setError('');
+    const result = await loginWithGoogleIdToken(idToken);
+    if (result.success) {
+      router.push('/dashboard');
+    } else {
+      setError(result.message || 'เข้าสู่ระบบด้วย Google ไม่สำเร็จ');
     }
   };
 
@@ -126,6 +137,16 @@ const Login = () => {
               ) : 'เข้าสู่ระบบ'}
             </button>
           </form>
+
+          {/* Divider */}
+          <div className="flex items-center gap-3 my-6">
+            <div className="flex-1 h-px bg-gray-200" />
+            <span className="text-xs text-gray-400">หรือ</span>
+            <div className="flex-1 h-px bg-gray-200" />
+          </div>
+
+          {/* Google Sign-In — บัญชี Google Workspace for Education (GAFE) */}
+          <GoogleSignInButton onIdToken={handleGoogleToken} disabled={loading} />
 
           <p className="text-center text-xs text-gray-400 mt-8">
             © 2568 Klasa School Management System

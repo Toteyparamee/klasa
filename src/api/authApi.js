@@ -71,6 +71,23 @@ export const authAPI = {
     }
     return data;
   },
+
+  // Login ด้วย Google Workspace for Education (GAFE) — ดู GAFE_LOGIN_DESIGN.md
+  // เฉพาะ user ที่มีอยู่ในระบบแล้วเท่านั้น (web control เป็นระบบ admin/staff
+  // ไม่รองรับ self-onboard ผ่านรหัสนักเรียน+วันเกิดแบบฝั่ง mobile)
+  async googleLogin(idToken) {
+    const url = buildURL('LOGIN', '/server/auth/google');
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify({ id_token: idToken }),
+    });
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.message || 'Google login failed');
+    }
+    return data;
+  },
 };
 
 export const userAPI = {

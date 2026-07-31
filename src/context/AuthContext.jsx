@@ -92,6 +92,40 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
+  // Login ด้วย Google Workspace for Education (GAFE) — ดู GAFE_LOGIN_DESIGN.md
+  // เฉพาะ user ที่มีอยู่ในระบบแล้วเท่านั้น (ไม่รองรับ self-onboard เหมือน mobile)
+  // 409 IDENTITY_NOT_LINKED จะขึ้นเป็น error message ธรรมดา ("ไม่พบบัญชีในระบบ")
+  const loginWithGoogleIdToken = async (idToken) => {
+    setLoading(true);
+    setError(null);
+
+    try {
+      const response = await authAPI.googleLogin(idToken);
+
+      if (response.success) {
+        const tokens = response.tokens;
+        const userData = mergeSchoolId(response.data, tokens.access_token);
+
+        setUser(userData);
+        setToken(tokens.access_token);
+
+        sessionStorage.setItem('user', JSON.stringify(userData));
+        sessionStorage.setItem('access_token', tokens.access_token);
+        sessionStorage.setItem('refresh_token', tokens.refresh_token);
+
+        setLoading(false);
+        return { success: true };
+      }
+
+      setLoading(false);
+      return { success: false, message: response.message };
+    } catch (err) {
+      setLoading(false);
+      setError(err.message);
+      return { success: false, message: err.message };
+    }
+  };
+
   const logout = () => {
     setUser(null);
     setToken(null);
@@ -136,7 +170,10 @@ export const AuthProvider = ({ children }) => {
   };
 
   return (
-    <AuthContext.Provider value={{ user, token, login, logout, loading, error, isInitialized, getValidToken }}>
+    <AuthContext.Provider value={{
+      user, token, login, logout, loading, error, isInitialized, getValidToken,
+      loginWithGoogleIdToken,
+    }}>
       {children}
     </AuthContext.Provider>
   );

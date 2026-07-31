@@ -28,3 +28,4 @@ out
 *.sw?
 .vercel
 .env*.local
+.env*
