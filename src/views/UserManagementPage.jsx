@@ -157,6 +157,8 @@ const UserManagementPage = () => {
         return 'bg-blue-50 text-blue-700 px-2.5 py-0.5 rounded-full text-xs font-semibold';
       case 'editor':
         return 'bg-amber-50 text-amber-600 px-2.5 py-0.5 rounded-full text-xs font-semibold';
+      case 'executive':
+        return 'bg-purple-50 text-purple-600 px-2.5 py-0.5 rounded-full text-xs font-semibold';
       case 'student':
       default:
         return 'bg-green-50 text-green-700 px-2.5 py-0.5 rounded-full text-xs font-semibold';
@@ -171,6 +173,8 @@ const UserManagementPage = () => {
         return 'ครู';
       case 'editor':
         return 'ผู้แก้ไข';
+      case 'executive':
+        return 'ผู้บริหาร';
       case 'student':
       default:
         return 'นักเรียน';
@@ -250,6 +254,7 @@ const UserManagementPage = () => {
                   <option value="teacher">ครู</option>
                   <option value="student">นักเรียน</option>
                   <option value="editor">ผู้แก้ไข</option>
+                  <option value="executive">ผู้บริหาร</option>
                 </select>
               </div>
               {classNames.length > 0 && (
@@ -331,6 +336,7 @@ const UserManagementPage = () => {
                         <option value="teacher">ครู</option>
                         <option value="editor">ผู้แก้ไข</option>
                         <option value="admin">ผู้ดูแลระบบ</option>
+                        <option value="executive">ผู้บริหาร</option>
                       </select>
                     </div>
 
