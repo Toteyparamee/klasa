@@ -40,7 +40,7 @@ const Sidebar = () => {
     { path: '/settings',        icon: '⚙️', label: 'ตั้งค่าระบบ',        roles: ['admin', 'editor'] },
     { path: '/emergency',       icon: '🚨', label: 'แจ้งเหตุฉุกเฉิน',   roles: ['admin', 'editor'] },
     { path: '/academic-report', icon: '📊', label: 'รายงานวิชาการ',     roles: ['admin', 'editor', 'viewer', 'executive'] },
-    { path: '/executive',       icon: '🧭', label: 'ภาพรวมนักเรียนที่เสี่ยง', roles: ['admin', 'executive'] },
+    { path: '/executive',       icon: '🧭', label: 'ภาพรวมนักเรียนที่เสี่ยง', roles: ['admin'] }, // executive เห็นที่ /dashboard (หน้าหลัก) แทน ไม่ต้องมีเมนูซ้ำ
   ];
 
   const isActive = (path) => pathname === path;

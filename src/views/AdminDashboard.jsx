@@ -7,6 +7,7 @@ import { useSchool } from '../context/SchoolContext';
 import { useRouter } from 'next/navigation';
 import Sidebar from '../components/Sidebar';
 import { uploadAPI } from '../api/uploadApi';
+import ExecutiveDashboard from './ExecutiveDashboard';
 
 const SchoolLocationEditor = dynamic(() => import('../components/SchoolLocationEditor'), { ssr: false });
 
@@ -60,6 +61,18 @@ const SchoolAvatar = ({ schoolId, name }) => {
 };
 
 const AdminDashboard = () => {
+  const { user } = useAuth();
+
+  // ผู้บริหาร (executive) เข้าหน้าหลักแล้วเห็นสรุปผลนักเรียนที่เสี่ยงแทน
+  // หน้าจัดการโรงเรียนด้านล่าง — role อื่น (admin/editor) ไม่กระทบ
+  if (user?.role === 'executive') {
+    return <ExecutiveDashboard />;
+  }
+
+  return <AdminDashboardContent />;
+};
+
+const AdminDashboardContent = () => {
   const { user } = useAuth();
   const { schools, addSchool, deleteSchool, updateSchool } = useSchool();
   const router = useRouter();
