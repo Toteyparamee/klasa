@@ -7,7 +7,9 @@ import { studentAPI } from '../api/personnelApi';
 import gradesAPI from '../api/gradesApi';
 import { getSemesterSettings, getCurrentSemester } from '../api/settingsApi';
 import { useAuth } from '../context/AuthContext';
+import { useSchool } from '../context/SchoolContext';
 import { useSchoolId } from '../hooks/useSchoolId';
+import { uploadAPI } from '../api/uploadApi';
 
 // เกณฑ์ "เสี่ยง" ที่ตกลงไว้:
 // - เช็คชื่อ: อัตรามาเรียนเดือนนี้ < 80%
@@ -22,9 +24,49 @@ const RISK_TABS = [
   { key: 'grades', label: '📝 ผลการเรียน', color: 'red' },
 ];
 
+// การ์ดโลโก้โรงเรียน — เหมือนกับ AdminDashboard.jsx (โหลดผ่าน blob กัน hotlink)
+const SchoolAvatar = ({ schoolId, name }) => {
+  const { getValidToken } = useAuth();
+  const [blobUrl, setBlobUrl] = useState(null);
+  const [hasError, setHasError] = useState(false);
+
+  useEffect(() => {
+    if (!schoolId) return;
+    let revoked = false;
+    getValidToken().then((token) => {
+      if (!token) return;
+      const url = uploadAPI.getSchoolLogoUrl(schoolId);
+      return fetch(url, { headers: { Authorization: `Bearer ${token}` } })
+        .then((r) => (r.ok ? r.blob() : null))
+        .then((blob) => {
+          if (!revoked && blob) setBlobUrl(URL.createObjectURL(blob));
+        });
+    }).catch(() => {});
+    return () => { revoked = true; };
+  }, [schoolId, getValidToken]);
+
+  if (blobUrl && !hasError) {
+    return (
+      <img
+        src={blobUrl}
+        alt={name}
+        onError={() => setHasError(true)}
+        className="w-11 h-11 rounded-full object-cover flex-shrink-0 bg-gray-100"
+      />
+    );
+  }
+  return (
+    <div className="w-11 h-11 rounded-full bg-blue-600 flex items-center justify-center text-white text-lg font-bold flex-shrink-0 select-none">
+      {name?.charAt(0) || '?'}
+    </div>
+  );
+};
+
 const ExecutiveDashboard = () => {
   const { user, token } = useAuth();
   const schoolId = useSchoolId();
+  const { schools } = useSchool();
+  const mySchool = schools.find((s) => String(s.id) === String(schoolId));
 
   const [tab, setTab] = useState('attendance');
   const [loading, setLoading] = useState(true);
@@ -296,6 +338,31 @@ const ExecutiveDashboard = () => {
               </>
             )}
           </div>
+
+          {/* ข้อมูลโรงเรียนของตัวเอง — read-only (ผู้บริหารดูอย่างเดียว
+              ไม่มีปุ่มแก้ไข/ลบ/ตั้งพิกัด ต่างจากหน้า admin) */}
+          {mySchool && (
+            <div className="mt-6">
+              <h2 className="text-base font-semibold text-gray-900 mb-4">ข้อมูลโรงเรียน</h2>
+              <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 max-w-sm">
+                <div className="flex items-center gap-3 mb-3">
+                  <SchoolAvatar schoolId={mySchool.id} name={mySchool.name} />
+                  <div>
+                    <h3 className="text-base font-semibold text-gray-900 leading-tight">{mySchool.name}</h3>
+                    <p className="text-sm text-gray-500">{mySchool.address}</p>
+                  </div>
+                </div>
+                <div className="flex gap-2 flex-wrap">
+                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-50 text-blue-700">
+                    {mySchool.classrooms?.length ?? 0} ห้องเรียน
+                  </span>
+                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-50 text-blue-700">
+                    {totalStudents} นักเรียน
+                  </span>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>
