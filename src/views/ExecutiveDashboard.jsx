@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import Sidebar from '../components/Sidebar';
 import { attendanceAPI, behaviorAPI } from '../api';
 import { studentAPI } from '../api/personnelApi';
@@ -33,6 +33,7 @@ const ExecutiveDashboard = () => {
   const [attendanceRisk, setAttendanceRisk] = useState([]);
   const [behaviorRisk, setBehaviorRisk] = useState([]);
   const [gradesRisk, setGradesRisk] = useState([]);
+  const [totalStudents, setTotalStudents] = useState(0);
 
   const loadData = useCallback(async () => {
     if (!schoolId) return;
@@ -71,6 +72,7 @@ const ExecutiveDashboard = () => {
       const students = studentsRes.status === 'fulfilled'
         ? (Array.isArray(studentsRes.value) ? studentsRes.value : studentsRes.value?.data || [])
         : [];
+      setTotalStudents(students.length);
       const codes = students.map((s) => s.student_code).filter(Boolean);
 
       if (codes.length) {
@@ -107,6 +109,41 @@ const ExecutiveDashboard = () => {
     grades: gradesRisk.length,
   };
 
+  // รวมนักเรียนเสี่ยงทั้ง 3 ด้านเป็น map เดียว (key = student_code) เพื่อหา
+  // ภาพรวม, เสี่ยงซ้ำซ้อน, และแยกตามห้อง — คำนวณครั้งเดียวตอนข้อมูลเปลี่ยน
+  const summary = useMemo(() => {
+    const byCode = new Map();
+    const addRisk = (code, name, classroom, kind) => {
+      if (!byCode.has(code)) {
+        byCode.set(code, { student_code: code, student_name: name, classroom, kinds: [] });
+      }
+      byCode.get(code).kinds.push(kind);
+    };
+    attendanceRisk.forEach((r) => addRisk(r.student_code, r.student_name, r.class_name, 'attendance'));
+    behaviorRisk.forEach((r) => addRisk(r.student_code, `${r.first_name} ${r.last_name}`.trim(), r.classroom, 'behavior'));
+    gradesRisk.forEach((r) => addRisk(r.student_code, r.student_name, r.classroom, 'grades'));
+
+    const allRisk = Array.from(byCode.values());
+    const overlapping = allRisk.filter((s) => s.kinds.length >= 2)
+      .sort((a, b) => b.kinds.length - a.kinds.length);
+
+    // แยกตามห้อง — นับจำนวนคนเสี่ยง (คนละคนกัน ไม่ซ้ำ) ต่อห้อง
+    const byClass = new Map();
+    allRisk.forEach((s) => {
+      const cls = s.classroom || 'ไม่ระบุห้อง';
+      byClass.set(cls, (byClass.get(cls) || 0) + 1);
+    });
+    const byClassList = Array.from(byClass.entries())
+      .map(([classroom, count]) => ({ classroom, count }))
+      .sort((a, b) => b.count - a.count);
+    const maxClassCount = byClassList.length ? byClassList[0].count : 0;
+
+    const riskCount = allRisk.length;
+    const riskRate = totalStudents > 0 ? (riskCount / totalStudents) * 100 : 0;
+
+    return { allRisk, overlapping, byClassList, maxClassCount, riskCount, riskRate };
+  }, [attendanceRisk, behaviorRisk, gradesRisk, totalStudents]);
+
   return (
     <div className="flex min-h-screen bg-slate-50">
       <Sidebar />
@@ -119,7 +156,104 @@ const ExecutiveDashboard = () => {
             </p>
           </div>
 
-          {/* Summary cards */}
+          {/* สรุปผลภาพรวม */}
+          {!loading && (
+            <div className="grid grid-cols-3 max-md:grid-cols-1 gap-4 mb-6">
+              <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 flex items-center gap-4">
+                <div className="w-12 h-12 rounded-xl bg-blue-50 flex items-center justify-center text-2xl shrink-0">🎓</div>
+                <div>
+                  <div className="text-2xl font-bold text-gray-900">{totalStudents}</div>
+                  <div className="text-sm text-gray-500">นักเรียนทั้งหมด</div>
+                </div>
+              </div>
+              <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 flex items-center gap-4">
+                <div className="w-12 h-12 rounded-xl bg-red-50 flex items-center justify-center text-2xl shrink-0">⚠️</div>
+                <div>
+                  <div className="text-2xl font-bold text-gray-900">
+                    {summary.riskCount}
+                    <span className="text-base font-medium text-gray-400 ml-1">
+                      ({summary.riskRate.toFixed(1)}%)
+                    </span>
+                  </div>
+                  <div className="text-sm text-gray-500">นักเรียนที่เสี่ยง (อย่างน้อย 1 ด้าน)</div>
+                </div>
+              </div>
+              <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 flex items-center gap-4">
+                <div className="w-12 h-12 rounded-xl bg-purple-50 flex items-center justify-center text-2xl shrink-0">🔺</div>
+                <div>
+                  <div className="text-2xl font-bold text-gray-900">{summary.overlapping.length}</div>
+                  <div className="text-sm text-gray-500">เสี่ยงซ้ำซ้อนตั้งแต่ 2 ด้าน</div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* แยกตามห้องเรียน */}
+          {!loading && summary.byClassList.length > 0 && (
+            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 mb-6">
+              <h3 className="m-0 mb-4 text-base font-semibold text-gray-900">จำนวนนักเรียนที่เสี่ยงแยกตามห้อง</h3>
+              <div className="flex flex-col gap-2.5">
+                {summary.byClassList.map(({ classroom, count }) => (
+                  <div key={classroom} className="flex items-center gap-3">
+                    <div className="w-20 shrink-0 text-sm text-gray-600 text-right">{classroom}</div>
+                    <div className="flex-1 h-6 bg-gray-100 rounded-lg overflow-hidden">
+                      <div
+                        className="h-full bg-red-400 rounded-lg flex items-center justify-end px-2 transition-all"
+                        style={{ width: `${summary.maxClassCount ? (count / summary.maxClassCount) * 100 : 0}%` }}
+                      >
+                        <span className="text-xs text-white font-semibold">{count}</span>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* นักเรียนที่เสี่ยงซ้ำซ้อน */}
+          {!loading && summary.overlapping.length > 0 && (
+            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden mb-6">
+              <div className="px-6 py-5 border-b border-gray-100">
+                <h3 className="m-0 text-base font-semibold text-gray-900">
+                  นักเรียนที่เสี่ยงหลายด้านพร้อมกัน
+                </h3>
+                <p className="text-xs text-gray-400 mt-1">ควรได้รับความสนใจเป็นลำดับแรก</p>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-left text-gray-500 border-b border-gray-100">
+                      <th className="px-6 py-3 font-medium">รหัสนักเรียน</th>
+                      <th className="px-6 py-3 font-medium">ชื่อ</th>
+                      <th className="px-6 py-3 font-medium">ห้อง</th>
+                      <th className="px-6 py-3 font-medium">เสี่ยงด้าน</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {summary.overlapping.map((s) => (
+                      <tr key={s.student_code} className="border-b border-gray-50 last:border-0">
+                        <td className="px-6 py-3 text-gray-700">{s.student_code}</td>
+                        <td className="px-6 py-3 text-gray-900 font-medium">{s.student_name}</td>
+                        <td className="px-6 py-3 text-gray-600">{s.classroom}</td>
+                        <td className="px-6 py-3 flex gap-1.5 flex-wrap">
+                          {s.kinds.map((k) => {
+                            const t = RISK_TABS.find((rt) => rt.key === k);
+                            return (
+                              <span key={k} className="text-xs bg-red-50 text-red-600 px-2 py-1 rounded-lg font-medium">
+                                {t?.label || k}
+                              </span>
+                            );
+                          })}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* Summary cards ต่อด้าน */}
           <div className="grid grid-cols-3 max-md:grid-cols-1 gap-4 mb-6">
             {RISK_TABS.map((t) => (
               <button
