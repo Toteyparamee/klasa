@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useRouter } from 'next/navigation';
 import Sidebar from '../components/Sidebar';
 import { attendanceAPI, behaviorAPI } from '../api';
 import { studentAPI } from '../api/personnelApi';
@@ -67,6 +68,7 @@ const ExecutiveDashboard = () => {
   const schoolId = useSchoolId();
   const { schools } = useSchool();
   const mySchool = schools.find((s) => String(s.id) === String(schoolId));
+  const router = useRouter();
 
   const [tab, setTab] = useState('attendance');
   const [loading, setLoading] = useState(true);
@@ -339,8 +341,8 @@ const ExecutiveDashboard = () => {
             )}
           </div>
 
-          {/* ข้อมูลโรงเรียนของตัวเอง — read-only (ผู้บริหารดูอย่างเดียว
-              ไม่มีปุ่มแก้ไข/ลบ/ตั้งพิกัด ต่างจากหน้า admin) */}
+          {/* ข้อมูลโรงเรียนของตัวเอง — ผู้บริหารดูรายละเอียดได้ แต่ไม่มี
+              ปุ่มแก้ไข/ลบ/ตั้งพิกัด ต่างจากหน้า admin (read-only) */}
           {mySchool && (
             <div className="mt-6">
               <h2 className="text-base font-semibold text-gray-900 mb-4">ข้อมูลโรงเรียน</h2>
@@ -352,7 +354,7 @@ const ExecutiveDashboard = () => {
                     <p className="text-sm text-gray-500">{mySchool.address}</p>
                   </div>
                 </div>
-                <div className="flex gap-2 flex-wrap">
+                <div className="flex gap-2 flex-wrap mb-4">
                   <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-50 text-blue-700">
                     {mySchool.classrooms?.length ?? 0} ห้องเรียน
                   </span>
@@ -360,6 +362,12 @@ const ExecutiveDashboard = () => {
                     {totalStudents} นักเรียน
                   </span>
                 </div>
+                <button
+                  onClick={() => router.push(`/school/${mySchool.id}`)}
+                  className="w-full px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-semibold border-none cursor-pointer transition-colors"
+                >
+                  ดูรายละเอียด
+                </button>
               </div>
             </div>
           )}
